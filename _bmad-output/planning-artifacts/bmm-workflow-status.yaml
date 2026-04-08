@@ -1,0 +1,103 @@
+# Workflow Status - BMad Method
+# This tracks progress through BMM methodology Analysis, Planning, and Solutioning phases.
+# Implementation phase is tracked separately in sprint-status.yaml
+
+# STATUS DEFINITIONS:
+# ==================
+# Initial Status (before completion):
+#   - required: Must be completed to progress
+#   - optional: Can be completed but not required
+#   - recommended: Strongly suggested but not required
+#   - conditional: Required only if certain conditions met (e.g., if_has_ui)
+#
+# Completion Status:
+#   - {file-path}: File created/found (e.g., "docs/product-brief.md")
+#   - skipped: Optional/conditional workflow that was skipped
+
+generated: "2026-04-08"
+project: "FBTAX_CLOUD"
+project_type: "Portal Hub SaaS - Ponto de entrada único para todos os sistemas fbtax.cloud"
+selected_track: "method"
+field_type: "greenfield"
+workflow_path: "_bmad/bmm/workflows/workflow-status/paths/method-greenfield.yaml"
+notes:
+  - "Herda arquitetura, design system e stack do FB_SMARTPICK"
+  - "Portal: www.fbtax.cloud → lista sistemas do cliente (simulador, apuracao, smartpick, etc.)"
+  - "_bmad compartilhado em /projetos/_bmad"
+
+workflow_status:
+  - phase: 1
+    name: "Analysis (Optional)"
+    workflows:
+      - id: "brainstorm-project"
+        status: skipped
+        agent: analyst
+        command: "/bmad:bmm:workflows:brainstorming"
+
+      - id: "research"
+        status: skipped
+        agent: analyst
+        command: "/bmad:bmm:workflows:research"
+
+      - id: "product-brief"
+        status: "_bmad-output/planning-artifacts/product-brief-FBTAX_CLOUD-2026-04-08.md"
+        completed: "2026-04-08"
+        agent: analyst
+        command: "/bmad:bmm:workflows:create-product-brief"
+        note: "Usar FB_SMARTPICK como referência de arquitetura e design"
+
+  - phase: 2
+    name: "Planning"
+    workflows:
+      - id: "prd"
+        status: "_bmad-output/planning-artifacts/prd.md"
+        completed: "2026-04-08"
+        agent: pm
+        command: "/bmad:bmm:workflows:create-prd"
+        output: "Product Requirements Document com FRs e NFRs"
+
+      - id: "create-ux-design"
+        status: conditional
+        condition: "if_has_ui"
+        agent: ux-designer
+        command: "/bmad:bmm:workflows:create-ux-design"
+        note: "Portal tem UI — avaliar após PRD"
+
+  - phase: 3
+    name: "Solutioning"
+    workflows:
+      - id: "create-architecture"
+        status: "_bmad-output/planning-artifacts/architecture.md"
+        completed: "2026-04-08"
+        agent: architect
+        command: "/bmad:bmm:workflows:create-architecture"
+        note: "Basear em FB_SMARTPICK — adaptar para portal multi-sistema"
+
+      - id: "create-epics-and-stories"
+        status: "_bmad-output/planning-artifacts/epics.md"
+        completed: "2026-04-08"
+        agent: pm
+        command: "/bmad:bmm:workflows:create-epics-and-stories"
+        note: "5 epics, 19 stories, 30/30 FRs cobertos"
+
+      - id: "test-design"
+        status: optional
+        agent: tea
+        command: "/bmad:bmm:workflows:testarch-test-design"
+
+      - id: "implementation-readiness"
+        status: "_bmad-output/planning-artifacts/implementation-readiness-report-2026-04-08.md"
+        completed: "2026-04-08"
+        agent: architect
+        command: "/bmad:bmm:workflows:check-implementation-readiness"
+        note: "READY FOR IMPLEMENTATION — 3 minor concerns (sem bloqueadores)"
+
+  - phase: 4
+    name: "Implementation"
+    workflows:
+      - id: "sprint-planning"
+        status: "_bmad-output/implementation-artifacts/sprint-status.yaml"
+        completed: "2026-04-08"
+        agent: sm
+        command: "/bmad:bmm:workflows:sprint-planning"
+        note: "5 epics, 19 stories — todos em backlog"

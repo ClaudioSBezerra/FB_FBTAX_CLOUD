@@ -1,0 +1,80 @@
+# generated: 2026-04-08
+# project: FBTAX_CLOUD
+# project_key: FBTAX-CLOUD
+# tracking_system: file-system
+# story_location: FBTAX_CLOUD/_bmad-output/implementation-artifacts
+
+# STATUS DEFINITIONS:
+# ==================
+# Epic Status:
+#   - backlog: Epic not yet started
+#   - in-progress: Epic actively being worked on
+#   - done: All stories in epic completed
+#
+# Epic Status Transitions:
+#   - backlog → in-progress: Automatically when first story is created (via create-story)
+#   - in-progress → done: Manually when all stories reach 'done' status
+#
+# Story Status:
+#   - backlog: Story only exists in epic file
+#   - ready-for-dev: Story file created in stories folder
+#   - in-progress: Developer actively working on implementation
+#   - review: Ready for code review (via Dev's code-review workflow)
+#   - done: Story completed
+#
+# Retrospective Status:
+#   - optional: Can be completed but not required
+#   - done: Retrospective has been completed
+#
+# WORKFLOW NOTES:
+# ===============
+# - Epic transitions to 'in-progress' automatically when first story is created
+# - Stories can be worked in parallel if team capacity allows
+# - SM typically creates next story after previous one is 'done' to incorporate learnings
+# - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
+
+generated: "2026-04-08"
+project: FBTAX_CLOUD
+project_key: FBTAX-CLOUD
+tracking_system: file-system
+story_location: "FBTAX_CLOUD/_bmad-output/implementation-artifacts"
+
+development_status:
+  # ─── Epic 1: Fundação do Projeto e Deploy ───────────────────────────────────
+  epic-1: in-progress
+  1-1-setup-do-repositorio-base: review
+  1-2-schema-e-migrations-iniciais: backlog
+  1-3-health-check-e-configuracao-de-ambiente: backlog
+  1-4-deploy-coolify-e-dns: backlog
+  epic-1-retrospective: optional
+
+  # ─── Epic 2: Vitrine Pública de Produtos ────────────────────────────────────
+  epic-2: backlog
+  2-1-endpoint-de-produtos-publicos: backlog
+  2-2-portalpage-e-productcard: backlog
+  2-3-logica-de-tenant-e-navegacao: backlog
+  2-4-seo-e-acessibilidade: backlog
+  epic-2-retrospective: optional
+
+  # ─── Epic 3: Notificações Públicas e Contato Comercial ──────────────────────
+  epic-3: backlog
+  3-1-endpoint-de-notificacoes-publicas: backlog
+  3-2-notificationlist-no-frontend: backlog
+  3-3-rastreamento-de-visualizacoes-de-notificacao: backlog
+  3-4-formulario-de-contato-comercial: backlog
+  epic-3-retrospective: optional
+
+  # ─── Epic 4: Painel Admin — Autenticação e Gestão de Produtos ───────────────
+  epic-4: backlog
+  4-1-login-e-autenticacao-jwt: backlog
+  4-2-admindashboard-e-listagem-de-produtos: backlog
+  4-3-crud-de-produtos: backlog
+  4-4-gestao-de-tenant-products: backlog
+  epic-4-retrospective: optional
+
+  # ─── Epic 5: Painel Admin — Notificações e Métricas ─────────────────────────
+  epic-5: backlog
+  5-1-crud-de-notificacoes: backlog
+  5-2-publicar-e-despublicar-notificacoes: backlog
+  5-3-metricas-no-painel-admin: backlog
+  epic-5-retrospective: optional
