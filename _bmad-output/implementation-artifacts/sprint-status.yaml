@@ -44,7 +44,7 @@ development_status:
   epic-1: in-progress
   1-1-setup-do-repositorio-base: review
   1-2-schema-e-migrations-iniciais: review
-  1-3-health-check-e-configuracao-de-ambiente: backlog
+  1-3-health-check-e-configuracao-de-ambiente: review
   1-4-deploy-coolify-e-dns: backlog
   epic-1-retrospective: optional
 

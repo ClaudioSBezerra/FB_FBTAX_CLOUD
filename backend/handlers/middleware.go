@@ -17,9 +17,7 @@ func GetAllowedOrigins() map[string]bool {
 		list = strings.Split(envOrigins, ",")
 	} else {
 		list = []string{
-			"https://smartpick.fbtax.cloud",
-			"https://fbtax.cloud",
-			"http://localhost:3000",
+			"https://www.fbtax.cloud",
 			"http://localhost:5173",
 		}
 	}
