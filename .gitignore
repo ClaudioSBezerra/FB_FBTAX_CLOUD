@@ -16,10 +16,14 @@ backend/vendor/
 *.test
 *.out
 
-# Environment
+# Environment (never commit real env files)
 .env
 .env.local
 .env.production
+.env.FB_APU01
+.env.hostinger
+.env.FB_*
+.env.*.local
 
 # OS
 .DS_Store
@@ -36,3 +40,11 @@ docker-compose.override.yml
 # Logs
 *.log
 backend.log
+tests/log.txt
+
+# Claude Code local data
+.claude/
+
+# Go binary artifacts
+backend/fb_cloud
+backend/fbtax_cloud
