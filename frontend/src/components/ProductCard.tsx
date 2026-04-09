@@ -1,5 +1,4 @@
-import { ArrowRight, Clock } from 'lucide-react'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { ArrowUpRight, Clock } from 'lucide-react'
 
 export type Product = {
   id: string
@@ -11,10 +10,10 @@ export type Product = {
 }
 
 const ACCENTS = [
-  { light: 'bg-blue-50',    text: 'text-blue-600',    border: 'border-blue-200',    hover: 'hover:border-blue-400'    },
-  { light: 'bg-emerald-50', text: 'text-emerald-600', border: 'border-emerald-200', hover: 'hover:border-emerald-400' },
-  { light: 'bg-violet-50',  text: 'text-violet-600',  border: 'border-violet-200',  hover: 'hover:border-violet-400'  },
-  { light: 'bg-amber-50',   text: 'text-amber-600',   border: 'border-amber-200',   hover: 'hover:border-amber-400'   },
+  { bg: 'bg-blue-50',    text: 'text-blue-700',    label: 'bg-blue-100 text-blue-700',    border: '#93c5fd', shadow: '#bfdbfe' },
+  { bg: 'bg-emerald-50', text: 'text-emerald-700',  label: 'bg-emerald-100 text-emerald-700', border: '#6ee7b7', shadow: '#a7f3d0' },
+  { bg: 'bg-violet-50',  text: 'text-violet-700',   label: 'bg-violet-100 text-violet-700',   border: '#c4b5fd', shadow: '#ddd6fe' },
+  { bg: 'bg-amber-50',   text: 'text-amber-700',    label: 'bg-amber-100 text-amber-700',     border: '#fcd34d', shadow: '#fde68a' },
 ]
 
 type ProductCardProps = Product & { colorIndex?: number }
@@ -23,48 +22,64 @@ export function ProductCard({ name, description, icon_url, destination_url, colo
   const accent = ACCENTS[colorIndex % ACCENTS.length]
   const hasLink = !!destination_url
 
-  const inner = (
-    <Card
-      className={`flex flex-col h-full border-2 transition-all duration-200 ${accent.border} ${
-        hasLink ? `${accent.hover} hover:shadow-lg hover:-translate-y-0.5 cursor-pointer` : ''
-      }`}
+  const card = (
+    <div
+      className={`
+        relative flex flex-col h-full min-h-[220px] rounded-2xl border-2 bg-white p-5
+        transition-all duration-200
+        ${hasLink
+          ? 'cursor-pointer hover:-translate-y-2 hover:-translate-x-1 group'
+          : 'opacity-80'}
+      `}
+      style={{
+        borderColor: accent.border,
+        boxShadow: hasLink
+          ? `5px 5px 0px ${accent.shadow}`
+          : `3px 3px 0px ${accent.shadow}`,
+      }}
     >
-      <CardHeader className="pb-2 pt-4 px-4">
-        <div className={`w-10 h-10 rounded-xl ${accent.light} flex items-center justify-center mb-2`}>
-          {icon_url ? (
-            <img src={icon_url} alt={name} className="w-6 h-6 object-contain" />
-          ) : (
-            <span className={`text-base font-bold ${accent.text}`}>{name.charAt(0)}</span>
-          )}
-        </div>
-        <CardTitle className="text-sm font-semibold text-gray-900 leading-snug">{name}</CardTitle>
-      </CardHeader>
+      {/* Ícone */}
+      <div className={`w-12 h-12 rounded-2xl ${accent.bg} flex items-center justify-center mb-4 flex-shrink-0`}>
+        {icon_url ? (
+          <img src={icon_url} alt={name} className="w-7 h-7 object-contain" />
+        ) : (
+          <span className={`text-xl font-black ${accent.text}`}>{name.charAt(0)}</span>
+        )}
+      </div>
 
-      <CardContent className="pt-0 pb-4 px-4 flex flex-col flex-1">
-        <p className="text-xs text-muted-foreground leading-relaxed flex-1">{description}</p>
+      {/* Conteúdo */}
+      <div className="flex flex-col flex-1">
+        <h3 className="text-sm font-bold text-slate-900 mb-2 leading-snug">{name}</h3>
+        <p className="text-xs text-slate-500 leading-relaxed flex-1">{description}</p>
+      </div>
 
-        <div className="mt-3">
-          {hasLink ? (
-            <span className={`inline-flex items-center gap-1 text-xs font-medium ${accent.text}`}>
-              Acessar <ArrowRight className="w-3 h-3" />
+      {/* Rodapé */}
+      <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between">
+        {hasLink ? (
+          <>
+            <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${accent.label}`}>
+              Disponível
             </span>
-          ) : (
-            <span className="inline-flex items-center gap-1 text-xs text-slate-400">
-              <Clock className="w-3 h-3" /> Em breve
+            <span className={`flex items-center gap-1 text-xs font-medium ${accent.text} group-hover:gap-2 transition-all`}>
+              Acessar <ArrowUpRight className="w-3.5 h-3.5" />
             </span>
-          )}
-        </div>
-      </CardContent>
-    </Card>
+          </>
+        ) : (
+          <span className="flex items-center gap-1.5 text-xs text-slate-400">
+            <Clock className="w-3 h-3" /> Em breve
+          </span>
+        )}
+      </div>
+    </div>
   )
 
   if (hasLink) {
     return (
       <a href={destination_url} target="_blank" rel="noopener noreferrer" className="block h-full">
-        {inner}
+        {card}
       </a>
     )
   }
 
-  return inner
+  return card
 }
