@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query'
 import { ProductCard, type Product } from '@/components/ProductCard'
 import { Skeleton } from '@/components/ui/skeleton'
-import { AlertCircle, Sparkles, Zap, Shield, Clock3 } from 'lucide-react'
+import { AlertCircle, Sparkles, Zap, Shield, Clock3, Lock } from 'lucide-react'
 
 function ProductCardSkeleton() {
   return (
@@ -45,10 +45,11 @@ const STACK = [
 ]
 
 const PILLARS = [
-  { icon: Sparkles, title: 'IA Generativa',  desc: 'Toda a plataforma foi projetada e construída com Claude AI da Anthropic — o assistente mais capaz do mercado.' },
-  { icon: Zap,      title: 'Alta Performance', desc: 'Backend em Go com zero dependências externas e latência sub-milissegundo. Frontend React com bundle < 100 kB.' },
-  { icon: Shield,   title: 'Longevidade',    desc: 'Stack escolhida por maturidade e longevidade — sem modismos. Go, React e PostgreSQL dominam o mercado há décadas.' },
-  { icon: Clock3,   title: 'Sempre evolui',  desc: 'Arquitetura modular que cresce junto com o negócio. Novas soluções entram sem reescrever o que já funciona.' },
+  { icon: Sparkles, title: 'IA Generativa',    desc: 'Projetada e construída com Claude AI da Anthropic — o assistente mais capaz do mercado.' },
+  { icon: Zap,      title: 'Alta Performance', desc: 'Backend em Go, latência sub-milissegundo. Frontend React com bundle < 100 kB.' },
+  { icon: Lock,     title: 'Segurança',        desc: 'JWT com expiração, refresh tokens, HTTPS obrigatório, prepared statements contra SQL injection, CORS restrito, rate limiting nas APIs e isolamento de dados por tenant.' },
+  { icon: Shield,   title: 'Longevidade',      desc: 'Go, React e PostgreSQL — stack madura, sem modismos, dominante há décadas.' },
+  { icon: Clock3,   title: 'Sempre evolui',    desc: 'Arquitetura modular. Novas soluções entram sem reescrever o que já funciona.' },
 ]
 
 export default function PortalPage() {
@@ -120,34 +121,33 @@ export default function PortalPage() {
           </div>
 
           {/* Badge Claude */}
-          <div className="flex flex-col items-center text-center mb-10">
-            <div className="inline-flex items-center gap-2.5 bg-gradient-to-r from-orange-500 to-amber-400 text-white px-5 py-2.5 rounded-full font-semibold text-sm shadow-lg mb-3">
-              <ClaudeSun className="w-4 h-4" />
+          <div className="flex flex-col items-center text-center mb-8">
+            <div className="inline-flex items-center gap-2 bg-gradient-to-r from-orange-500 to-amber-400 text-white px-4 py-2 rounded-full font-semibold text-xs shadow-lg mb-2">
+              <ClaudeSun className="w-3.5 h-3.5" />
               Powered by Claude AI · Anthropic
             </div>
-            <p className="text-slate-500 text-sm max-w-lg leading-relaxed">
-              Esta plataforma foi integralmente concebida e construída com inteligência artificial generativa —
-              do design à arquitetura, do banco de dados ao frontend.
+            <p className="text-slate-400 text-xs max-w-lg leading-relaxed">
+              Concebida e construída com IA generativa — do design à arquitetura, do banco ao frontend.
             </p>
           </div>
 
           {/* Pilares */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-10">
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 mb-8">
             {PILLARS.map(({ icon: Icon, title, desc }) => (
-              <div key={title} className="bg-white rounded-2xl border border-slate-100 p-5 shadow-sm">
-                <div className="w-9 h-9 rounded-xl bg-slate-900 flex items-center justify-center mb-3">
-                  <Icon className="w-4 h-4 text-white" />
+              <div key={title} className="bg-white rounded-xl border border-slate-100 p-4 shadow-sm">
+                <div className="w-7 h-7 rounded-lg bg-slate-900 flex items-center justify-center mb-2">
+                  <Icon className="w-3.5 h-3.5 text-white" />
                 </div>
-                <h3 className="text-sm font-bold text-slate-800 mb-1">{title}</h3>
-                <p className="text-xs text-slate-500 leading-relaxed">{desc}</p>
+                <h3 className="text-xs font-bold text-slate-800 mb-1">{title}</h3>
+                <p className="text-[11px] text-slate-400 leading-relaxed">{desc}</p>
               </div>
             ))}
           </div>
 
           {/* Stack badges */}
-          <div className="flex flex-wrap justify-center gap-2">
+          <div className="flex flex-wrap justify-center gap-1.5">
             {STACK.map(({ label, color }) => (
-              <span key={label} className={`px-3 py-1 rounded-full text-xs font-semibold ${color}`}>
+              <span key={label} className={`px-2.5 py-0.5 rounded-full text-[11px] font-semibold ${color}`}>
                 {label}
               </span>
             ))}
