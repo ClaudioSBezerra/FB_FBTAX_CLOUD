@@ -1,4 +1,4 @@
-# Build Stage — FB_SMARTPICK
+# Build Stage — FBTAX_CLOUD
 FROM golang:1.26-alpine AS builder
 RUN apk add --no-cache git
 WORKDIR /app
@@ -17,5 +17,5 @@ RUN apk --no-cache add tzdata ca-certificates && \
 WORKDIR /root/
 COPY --from=builder /app/server .
 COPY --from=builder /app/migrations ./migrations
-EXPOSE 8082
+EXPOSE 8083
 CMD ["./server"]

@@ -12,24 +12,22 @@ services:
     environment:
       - PORT=8083
       - DATABASE_URL=postgres://${DB_USER:-postgres}:${DB_PASSWORD:-postgres}@db:5432/${DB_NAME:-fbtax_cloud}?sslmode=disable
-      - REDIS_ADDR=redis:6379
       - JWT_SECRET=${JWT_SECRET}
-      - COOKIE_SECURE=${COOKIE_SECURE:-true}
-      - APP_MODULE=${APP_MODULE:-portal}
       - SMTP_HOST=${SMTP_HOST}
       - SMTP_PORT=${SMTP_PORT}
       - SMTP_USER=${SMTP_USER}
       - SMTP_PASSWORD=${SMTP_PASSWORD}
       - SMTP_FROM=${SMTP_FROM}
-      - APP_URL=${APP_URL:-https://www.fbtax.cloud}
       - ALLOWED_ORIGINS=${ALLOWED_ORIGINS:-https://www.fbtax.cloud}
     depends_on:
       db:
         condition: service_healthy
-      redis:
-        condition: service_started
-    volumes:
-      - api_uploads:/root/uploads
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8083/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
     networks:
       - fb_net
 
@@ -37,15 +35,13 @@ services:
   web:
     build:
       context: ./frontend
-      args:
-        - VITE_APP_MODULE=${VITE_APP_MODULE:-portal}
     restart: always
     expose:
       - "80"
     labels:
       - "traefik.enable=true"
       - "traefik.docker.network=coolify"
-      - "traefik.http.routers.fbtax-cloud.rule=Host(`smartpick.fbtax.cloud`)"
+      - "traefik.http.routers.fbtax-cloud.rule=Host(`www.fbtax.cloud`)"
       - "traefik.http.routers.fbtax-cloud.entrypoints=https"
       - "traefik.http.routers.fbtax-cloud.tls=true"
       - "traefik.http.routers.fbtax-cloud.tls.certresolver=letsencrypt"
@@ -74,15 +70,6 @@ services:
       timeout: 5s
       retries: 5
 
-  # Redis
-  redis:
-    image: redis:alpine
-    restart: always
-    sysctls:
-      - net.core.somaxconn=1024
-    networks:
-      - fb_net
-
 networks:
   fb_net:
     driver: bridge
@@ -91,4 +78,3 @@ networks:
 
 volumes:
   postgres_data:
-  api_uploads:
