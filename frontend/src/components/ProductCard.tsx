@@ -49,7 +49,7 @@ export function ProductCard({ name, description, icon_url, destination_url, colo
         transition-all duration-200
         ${hasLink
           ? 'cursor-pointer hover:-translate-y-2 hover:-translate-x-1 group'
-          : 'opacity-80'}
+          : ''}
       `}
       style={{
         borderColor: accent.border,
@@ -94,7 +94,7 @@ export function ProductCard({ name, description, icon_url, destination_url, colo
 
   if (hasLink) {
     return (
-      <a href={destination_url} target="_blank" rel="noopener noreferrer" className="block h-full">
+      <a href={destination_url} target="_blank" rel="noopener noreferrer" className="block h-full" aria-label={`Acessar ${name}`}>
         {card}
       </a>
     )

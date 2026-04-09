@@ -1,14 +1,22 @@
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
+import { useSearchParams } from 'react-router-dom'
 import { ProductCard, type Product } from '@/components/ProductCard'
 import { Skeleton } from '@/components/ui/skeleton'
 import { AlertCircle, Sparkles, Zap, Shield, Clock3, Lock } from 'lucide-react'
+
+// Mapa de clientes para apresentação — adicionar logo em /public e entrada aqui
+const CLIENTE_MAP: Record<string, { logo: string; name: string }> = {
+  jc:        { logo: '/JC.png',        name: 'JC'              },
+  ferreira:  { logo: '/logo-ferreira-costa.png', name: 'Ferreira Costa' },
+  // adicionar novos clientes aqui: slug: { logo: '/arquivo.png', name: 'Nome' }
+}
 
 function ProductCardSkeleton() {
   return (
     <div className="rounded-2xl border-2 border-slate-100 bg-white p-5 min-h-[220px] flex flex-col gap-4"
       style={{ boxShadow: '4px 4px 0px #e2e8f0' }}>
-      <Skeleton className="w-12 h-12 rounded-2xl" />
+      <Skeleton className="w-16 h-16 rounded-2xl" />
       <Skeleton className="h-4 w-32" />
       <Skeleton className="h-3 w-full" />
       <Skeleton className="h-3 w-3/4" />
@@ -20,29 +28,26 @@ function ProductCardSkeleton() {
 function ClaudeSun({ className }: { className?: string }) {
   return (
     <svg viewBox="0 0 100 100" fill="currentColor" className={className} aria-hidden="true">
-      {/* Raios principais — 4 pontas longas */}
       <path d="M50 4 C51.5 4 52 5 52.5 7 L56 30 C56.5 33 53.5 36 50 36 C46.5 36 43.5 33 44 30 L47.5 7 C48 5 48.5 4 50 4Z"/>
       <path d="M50 96 C48.5 96 48 95 47.5 93 L44 70 C43.5 67 46.5 64 50 64 C53.5 64 56.5 67 56 70 L52.5 93 C52 95 51.5 96 50 96Z"/>
       <path d="M4 50 C4 48.5 5 48 7 47.5 L30 44 C33 43.5 36 46.5 36 50 C36 53.5 33 56.5 30 56 L7 52.5 C5 52 4 51.5 4 50Z"/>
       <path d="M96 50 C96 51.5 95 52 93 52.5 L70 56 C67 56.5 64 53.5 64 50 C64 46.5 67 43.5 70 44 L93 47.5 C95 48 96 48.5 96 50Z"/>
-      {/* Raios diagonais — 4 pontas médias */}
       <path d="M17.2 17.2 C18.2 16.2 19.5 16.5 21 17.7 L38 34.7 C40.2 36.9 39.8 40.5 37.5 42.5 C35.2 44.5 31.5 44.1 29.7 41.5 L16.5 21.5 C15.2 19.7 16.2 18.2 17.2 17.2Z"/>
       <path d="M82.8 82.8 C81.8 83.8 80.5 83.5 79 82.3 L62 65.3 C59.8 63.1 60.2 59.5 62.5 57.5 C64.8 55.5 68.5 55.9 70.3 58.5 L83.5 78.5 C84.8 80.3 83.8 81.8 82.8 82.8Z"/>
       <path d="M82.8 17.2 C83.8 18.2 83.5 19.5 82.3 21 L65.3 38 C63.1 40.2 59.5 39.8 57.5 37.5 C55.5 35.2 55.9 31.5 58.5 29.7 L78.5 16.5 C80.3 15.2 81.8 16.2 82.8 17.2Z"/>
       <path d="M17.2 82.8 C16.2 81.8 16.5 80.5 17.7 79 L34.7 62 C36.9 59.8 40.5 60.2 42.5 62.5 C44.5 64.8 44.1 68.5 41.5 70.3 L21.5 83.5 C19.7 84.8 18.2 83.8 17.2 82.8Z"/>
-      {/* Centro */}
       <circle cx="50" cy="50" r="10"/>
     </svg>
   )
 }
 
 const STACK = [
-  { label: 'Go',          color: 'bg-cyan-100 text-cyan-800'    },
-  { label: 'React 18',    color: 'bg-blue-100 text-blue-800'    },
-  { label: 'TypeScript',  color: 'bg-indigo-100 text-indigo-800'},
-  { label: 'PostgreSQL',  color: 'bg-sky-100 text-sky-800'      },
-  { label: 'Tailwind',    color: 'bg-teal-100 text-teal-800'    },
-  { label: 'Docker',      color: 'bg-slate-100 text-slate-700'  },
+  { label: 'Go',          color: 'bg-cyan-100 text-cyan-800'     },
+  { label: 'React 18',    color: 'bg-blue-100 text-blue-800'     },
+  { label: 'TypeScript',  color: 'bg-indigo-100 text-indigo-800' },
+  { label: 'PostgreSQL',  color: 'bg-sky-100 text-sky-800'       },
+  { label: 'Tailwind',    color: 'bg-teal-100 text-teal-800'     },
+  { label: 'Docker',      color: 'bg-slate-100 text-slate-700'   },
 ]
 
 const PILLARS = [
@@ -55,6 +60,11 @@ const PILLARS = [
 
 export default function PortalPage() {
   const [showTech, setShowTech] = useState(false)
+  const [searchParams] = useSearchParams()
+
+  // ?cliente=jc → mostra badge de apresentação
+  const clienteSlug = searchParams.get('cliente')?.toLowerCase() ?? ''
+  const cliente = clienteSlug ? CLIENTE_MAP[clienteSlug] : null
 
   const { data, isPending, isError } = useQuery<Product[]>({
     queryKey: ['products'],
@@ -67,28 +77,37 @@ export default function PortalPage() {
       {/* ── Hero ── */}
       <header className="bg-gradient-to-br from-slate-900 via-blue-950 to-slate-800 text-white">
         <div className="max-w-6xl mx-auto px-6 py-8">
-
-          {/* Título + subtítulo (esquerda) e card JC (direita) — mesma linha */}
           <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-6">
 
             {/* Esquerda: ícone Claude + título + subtítulo */}
             <div className="flex-1">
-              <h1 className="text-3xl sm:text-4xl font-bold leading-tight mb-3 flex items-center gap-3 flex-wrap">
+              <div className="flex items-center gap-3 mb-1">
                 <img src="/claude.png" alt="Claude AI" className="w-10 h-10 sm:w-11 sm:h-11 rounded-xl flex-shrink-0" />
-                Soluções <span className="text-blue-400">inteligentes</span> para sua empresa
-              </h1>
-              <p className="text-slate-300 text-sm leading-relaxed whitespace-nowrap">
+                <div>
+                  {/* Linha 1: destaque */}
+                  <h1 className="text-3xl sm:text-4xl font-bold leading-tight">
+                    Soluções <span className="text-blue-400">inteligentes</span>
+                  </h1>
+                  {/* Linha 2: complemento em tamanho menor */}
+                  <p className="text-xl sm:text-2xl font-semibold text-slate-300 leading-tight">
+                    para sua empresa
+                  </p>
+                </div>
+              </div>
+              <p className="text-slate-400 text-sm leading-relaxed mt-3 lg:whitespace-nowrap">
                 Plataforma integrada com ferramentas especializadas em apuração tributária, simulação de cenários fiscais, gestão de RCAs e gestão estratégica de WMS.
               </p>
             </div>
 
-            {/* Direita: card Apresentação JC */}
-            <div className="flex-shrink-0">
-              <div className="flex items-center gap-2 bg-white/10 rounded-xl px-4 py-2 backdrop-blur-sm">
-                <span className="text-xs text-slate-400">Apresentação para</span>
-                <img src="/JC.png" alt="JC" className="h-8 w-auto rounded" />
+            {/* Direita: badge de apresentação — só aparece com ?cliente=slug */}
+            {cliente && (
+              <div className="flex-shrink-0">
+                <div className="flex items-center gap-2 bg-white/10 rounded-xl px-4 py-2 backdrop-blur-sm">
+                  <span className="text-xs text-slate-400">Apresentação para</span>
+                  <img src={cliente.logo} alt={cliente.name} className="h-8 w-auto rounded" />
+                </div>
               </div>
-            </div>
+            )}
 
           </div>
         </div>
@@ -123,14 +142,12 @@ export default function PortalPage() {
           style={{ maxHeight: showTech ? '800px' : '0px', opacity: showTech ? 1 : 0 }}
         >
           <div className="mt-12">
-            {/* Divisor */}
             <div className="flex items-center gap-4 mb-8">
               <div className="flex-1 border-t border-slate-200" />
               <span className="text-xs font-semibold text-slate-400 tracking-widest uppercase">Tecnologia</span>
               <div className="flex-1 border-t border-slate-200" />
             </div>
 
-            {/* Badge Claude */}
             <div className="flex flex-col items-center text-center mb-8">
               <div className="inline-flex items-center gap-2 bg-gradient-to-r from-orange-500 to-amber-400 text-white px-4 py-2 rounded-full font-semibold text-xs shadow-lg mb-2">
                 <ClaudeSun className="w-3.5 h-3.5" />
@@ -141,7 +158,6 @@ export default function PortalPage() {
               </p>
             </div>
 
-            {/* Pilares */}
             <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 mb-8">
               {PILLARS.map(({ icon: Icon, title, desc }) => (
                 <div key={title} className="bg-white rounded-xl border border-slate-100 p-4 shadow-sm">
@@ -154,7 +170,6 @@ export default function PortalPage() {
               ))}
             </div>
 
-            {/* Stack badges */}
             <div className="flex flex-wrap justify-center gap-1.5 pb-10">
               {STACK.map(({ label, color }) => (
                 <span key={label} className={`px-2.5 py-0.5 rounded-full text-[11px] font-semibold ${color}`}>
@@ -165,11 +180,11 @@ export default function PortalPage() {
           </div>
         </div>
 
-        {/* ── Botão Dúvidas? — discreto, logo acima do footer ── */}
+        {/* ── Botão Dúvidas? ── */}
         <div className="flex justify-center mt-6">
           <button
             onClick={() => setShowTech(v => !v)}
-            className="flex items-center gap-1.5 text-xs text-slate-400 hover:text-slate-600 transition-colors group"
+            className="flex items-center gap-1.5 text-xs text-slate-400 hover:text-slate-600 transition-colors"
           >
             <span>{showTech ? 'Fechar' : 'Dúvidas?'}</span>
             <svg
