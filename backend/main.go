@@ -271,6 +271,9 @@ func main() {
 	http.HandleFunc("/api/auth/refresh",         withDB(handlers.RefreshHandler))
 	http.HandleFunc("/api/auth/logout",          withDB(handlers.LogoutHandler))
 
+	// ── Portal — público (sem auth) ───────────────────────────────────────────
+	http.HandleFunc("/api/portal/products", withDB(handlers.GetPortalProductsHandler))
+
 	// ── Frontend estático (SPA React) ─────────────────────────────────────────
 	staticDir := "./static"
 	if _, err := os.Stat(staticDir); err == nil {
