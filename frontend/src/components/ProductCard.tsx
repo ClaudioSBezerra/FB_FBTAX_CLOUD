@@ -21,13 +21,13 @@ function ProductIcon({ name, accent }: { name: string; accent: typeof ACCENTS[0]
   const n = name.toLowerCase()
 
   if (n.includes('apura')) {
-    return <img src="/leao-rfb.png" alt="Receita Federal" className="w-8 h-8 object-contain" />
+    return <img src="/receita-apuracao.png" alt="Receita Federal" className="w-full h-full object-cover rounded-2xl" />
   }
   if (n.includes('simulador')) {
     return <TrendingUp className={`w-6 h-6 ${accent.text}`} strokeWidth={2.5} />
   }
   if (n.includes('farol')) {
-    return <Trophy className={`w-6 h-6 ${accent.text}`} strokeWidth={2.5} />
+    return <img src="/farol.png" alt="Farol" className="w-9 h-9 object-contain" />
   }
   if (n.includes('smart') || n.includes('pick')) {
     return <Warehouse className={`w-6 h-6 ${accent.text}`} strokeWidth={2} />
