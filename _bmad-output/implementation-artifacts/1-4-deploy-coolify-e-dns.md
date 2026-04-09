@@ -166,9 +166,13 @@ Sem issues nos tasks de código. Tasks 5–7 são manuais (Coolify + DNS + verif
 - `backend/Dockerfile` — comentário FBTAX_CLOUD, EXPOSE 8083
 - `docker-compose.yml` — health check api, Traefik www.fbtax.cloud, Redis removido, variáveis limpas
 - `docker-compose.prod.yml` — reescrito: fbtax-cloud-*, porta 8083, Redis/Prometheus/Grafana removidos
+- `frontend/nginx.conf` — upstream api:8082 → api:8083 (fix 503 em produção)
+- `frontend/Dockerfile` — comentário FBTAX_CLOUD, VITE_APP_MODULE legado removido
 
 ### Change Log
 
 | Data | Alteração |
 |---|---|
 | 2026-04-09 | Docker config corrigido para FBTAX_CLOUD: porta 8083, www.fbtax.cloud, health check, Redis removido, prod simplificado |
+| 2026-04-09 | nginx.conf upstream 8082→8083; frontend Dockerfile limpo — fix 503 em produção |
+| 2026-04-09 | Deploy Coolify verificado: https://www.fbtax.cloud/api/health → 200 OK ✅ |
