@@ -77,9 +77,8 @@ export default function PortalPage() {
                 <img src="/claude.png" alt="Claude AI" className="w-10 h-10 sm:w-11 sm:h-11 rounded-xl flex-shrink-0" />
                 Soluções <span className="text-blue-400">inteligentes</span> para sua empresa
               </h1>
-              <p className="text-slate-300 text-sm leading-relaxed max-w-xl">
-                Plataforma integrada com ferramentas especializadas em apuração tributária,
-                simulação de cenários fiscais, gestão de RCAs e gestão estratégica de WMS.
+              <p className="text-slate-300 text-sm leading-relaxed whitespace-nowrap">
+                Plataforma integrada com ferramentas especializadas em apuração tributária, simulação de cenários fiscais, gestão de RCAs e gestão estratégica de WMS.
               </p>
             </div>
 
