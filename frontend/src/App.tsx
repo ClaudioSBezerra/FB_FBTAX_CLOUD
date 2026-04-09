@@ -2,6 +2,7 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { Toaster } from '@/components/ui/sonner'
 import Login from './pages/Login'
+import PortalPage from './pages/PortalPage'
 import { AuthProvider, useAuth } from './contexts/AuthContext'
 
 const queryClient = new QueryClient()
@@ -20,7 +21,7 @@ function App() {
         <AuthProvider>
           <Routes>
             {/* Portal público */}
-            <Route path="/" element={<div>PortalPage — em breve</div>} />
+            <Route path="/" element={<PortalPage />} />
 
             {/* Admin */}
             <Route path="/admin/login" element={<Login />} />

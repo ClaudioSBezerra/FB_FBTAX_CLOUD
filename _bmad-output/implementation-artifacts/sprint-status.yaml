@@ -51,7 +51,7 @@ development_status:
   # ─── Epic 2: Vitrine Pública de Produtos ────────────────────────────────────
   epic-2: in-progress
   2-1-endpoint-de-produtos-publicos: review
-  2-2-portalpage-e-productcard: backlog
+  2-2-portalpage-e-productcard: review
   2-3-logica-de-tenant-e-navegacao: backlog
   2-4-seo-e-acessibilidade: backlog
   epic-2-retrospective: optional
