@@ -66,7 +66,7 @@ export default function PortalPage() {
         <div className="max-w-6xl mx-auto px-6 py-8">
 
           {/* Título + subtítulo (esquerda) e card JC (direita) — mesma linha */}
-          <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-6">
+          <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-6">
 
             {/* Esquerda: ícone Claude + título + subtítulo */}
             <div className="flex-1">
