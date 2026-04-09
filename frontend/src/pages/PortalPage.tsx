@@ -15,11 +15,22 @@ function ProductCardSkeleton() {
   )
 }
 
-// Símbolo Claude / Anthropic — 4-pointed star
-function ClaudeStar({ className }: { className?: string }) {
+// Símbolo Claude — sol com raios (logo Anthropic/Claude)
+function ClaudeSun({ className }: { className?: string }) {
   return (
-    <svg viewBox="0 0 24 24" fill="currentColor" className={className} aria-hidden="true">
-      <path d="M12 2 L13.8 10.2 L22 12 L13.8 13.8 L12 22 L10.2 13.8 L2 12 L10.2 10.2 Z" />
+    <svg viewBox="0 0 100 100" fill="currentColor" className={className} aria-hidden="true">
+      {/* Raios principais — 4 pontas longas */}
+      <path d="M50 4 C51.5 4 52 5 52.5 7 L56 30 C56.5 33 53.5 36 50 36 C46.5 36 43.5 33 44 30 L47.5 7 C48 5 48.5 4 50 4Z"/>
+      <path d="M50 96 C48.5 96 48 95 47.5 93 L44 70 C43.5 67 46.5 64 50 64 C53.5 64 56.5 67 56 70 L52.5 93 C52 95 51.5 96 50 96Z"/>
+      <path d="M4 50 C4 48.5 5 48 7 47.5 L30 44 C33 43.5 36 46.5 36 50 C36 53.5 33 56.5 30 56 L7 52.5 C5 52 4 51.5 4 50Z"/>
+      <path d="M96 50 C96 51.5 95 52 93 52.5 L70 56 C67 56.5 64 53.5 64 50 C64 46.5 67 43.5 70 44 L93 47.5 C95 48 96 48.5 96 50Z"/>
+      {/* Raios diagonais — 4 pontas médias */}
+      <path d="M17.2 17.2 C18.2 16.2 19.5 16.5 21 17.7 L38 34.7 C40.2 36.9 39.8 40.5 37.5 42.5 C35.2 44.5 31.5 44.1 29.7 41.5 L16.5 21.5 C15.2 19.7 16.2 18.2 17.2 17.2Z"/>
+      <path d="M82.8 82.8 C81.8 83.8 80.5 83.5 79 82.3 L62 65.3 C59.8 63.1 60.2 59.5 62.5 57.5 C64.8 55.5 68.5 55.9 70.3 58.5 L83.5 78.5 C84.8 80.3 83.8 81.8 82.8 82.8Z"/>
+      <path d="M82.8 17.2 C83.8 18.2 83.5 19.5 82.3 21 L65.3 38 C63.1 40.2 59.5 39.8 57.5 37.5 C55.5 35.2 55.9 31.5 58.5 29.7 L78.5 16.5 C80.3 15.2 81.8 16.2 82.8 17.2Z"/>
+      <path d="M17.2 82.8 C16.2 81.8 16.5 80.5 17.7 79 L34.7 62 C36.9 59.8 40.5 60.2 42.5 62.5 C44.5 64.8 44.1 68.5 41.5 70.3 L21.5 83.5 C19.7 84.8 18.2 83.8 17.2 82.8Z"/>
+      {/* Centro */}
+      <circle cx="50" cy="50" r="10"/>
     </svg>
   )
 }
@@ -65,8 +76,10 @@ export default function PortalPage() {
             </div>
           </div>
 
-          <h1 className="text-3xl sm:text-4xl font-bold leading-tight mb-3 max-w-2xl">
-            Soluções <span className="text-blue-400">inteligentes</span> para sua empresa
+          <h1 className="text-3xl sm:text-4xl font-bold leading-tight mb-3 max-w-2xl flex items-center gap-3 flex-wrap">
+            Soluções <span className="text-blue-400">inteligentes</span>
+            <ClaudeSun className="w-9 h-9 sm:w-10 sm:h-10 text-orange-400 drop-shadow-[0_0_10px_rgba(251,146,60,0.8)] animate-spin [animation-duration:12s]" />
+            para sua empresa
           </h1>
           <p className="text-slate-300 text-sm max-w-2xl leading-relaxed">
             Plataforma integrada com ferramentas especializadas em apuração tributária,
@@ -110,7 +123,7 @@ export default function PortalPage() {
           {/* Badge Claude */}
           <div className="flex flex-col items-center text-center mb-10">
             <div className="inline-flex items-center gap-2.5 bg-gradient-to-r from-orange-500 to-amber-400 text-white px-5 py-2.5 rounded-full font-semibold text-sm shadow-lg mb-3">
-              <ClaudeStar className="w-4 h-4" />
+              <ClaudeSun className="w-4 h-4" />
               Powered by Claude AI · Anthropic
             </div>
             <p className="text-slate-500 text-sm max-w-lg leading-relaxed">
@@ -148,7 +161,7 @@ export default function PortalPage() {
         <div className="max-w-6xl mx-auto px-6 py-4 flex flex-col sm:flex-row items-center justify-between gap-1 text-xs text-slate-400">
           <span>© {new Date().getFullYear()} FBTax Cloud — Todos os direitos reservados</span>
           <span className="flex items-center gap-1">
-            <ClaudeStar className="w-3 h-3 text-orange-400" />
+            <ClaudeSun className="w-3 h-3 text-orange-400" />
             Built with Claude AI
           </span>
         </div>
