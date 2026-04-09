@@ -64,27 +64,31 @@ export default function PortalPage() {
       {/* ── Hero ── */}
       <header className="bg-gradient-to-br from-slate-900 via-blue-950 to-slate-800 text-white">
         <div className="max-w-6xl mx-auto px-6 py-8">
-          <div className="flex items-center justify-between mb-6">
-            <div className="flex items-center gap-3">
-              <div className="w-8 h-8 rounded-lg bg-blue-500 flex items-center justify-center font-bold text-white text-xs tracking-wide select-none">
-                FB
-              </div>
-              <span className="text-xs font-medium text-slate-400 tracking-widest uppercase">FBTax Cloud</span>
-            </div>
-            <div className="flex items-center gap-2 bg-white/10 rounded-xl px-4 py-2 backdrop-blur-sm">
-              <span className="text-xs text-slate-400">Apresentação para</span>
-              <img src="/JC.png" alt="JC" className="h-8 w-auto rounded" />
-            </div>
-          </div>
 
-          <h1 className="text-3xl sm:text-4xl font-bold leading-tight mb-3 max-w-2xl flex items-center gap-3 flex-wrap">
-            <img src="/claude.png" alt="Claude AI" className="w-10 h-10 sm:w-11 sm:h-11 rounded-xl flex-shrink-0" />
-            Soluções <span className="text-blue-400">inteligentes</span> para sua empresa
-          </h1>
-          <p className="text-slate-300 text-sm max-w-2xl leading-relaxed">
-            Plataforma integrada com ferramentas especializadas em apuração tributária,
-            simulação de cenários fiscais, gestão de RCAs e gestão estratégica de WMS.
-          </p>
+          {/* Título + subtítulo (esquerda) e card JC (direita) — mesma linha */}
+          <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-6">
+
+            {/* Esquerda: ícone Claude + título + subtítulo */}
+            <div className="flex-1">
+              <h1 className="text-3xl sm:text-4xl font-bold leading-tight mb-3 flex items-center gap-3 flex-wrap">
+                <img src="/claude.png" alt="Claude AI" className="w-10 h-10 sm:w-11 sm:h-11 rounded-xl flex-shrink-0" />
+                Soluções <span className="text-blue-400">inteligentes</span> para sua empresa
+              </h1>
+              <p className="text-slate-300 text-sm leading-relaxed max-w-xl">
+                Plataforma integrada com ferramentas especializadas em apuração tributária,
+                simulação de cenários fiscais, gestão de RCAs e gestão estratégica de WMS.
+              </p>
+            </div>
+
+            {/* Direita: card Apresentação JC */}
+            <div className="flex-shrink-0">
+              <div className="flex items-center gap-2 bg-white/10 rounded-xl px-4 py-2 backdrop-blur-sm">
+                <span className="text-xs text-slate-400">Apresentação para</span>
+                <img src="/JC.png" alt="JC" className="h-8 w-auto rounded" />
+              </div>
+            </div>
+
+          </div>
         </div>
       </header>
 
@@ -157,8 +161,13 @@ export default function PortalPage() {
 
       {/* ── Footer ── */}
       <footer className="border-t bg-white mt-10">
-        <div className="max-w-6xl mx-auto px-6 py-4 flex flex-col sm:flex-row items-center justify-between gap-1 text-xs text-slate-400">
-          <span>© {new Date().getFullYear()} FBTax Cloud — Todos os direitos reservados</span>
+        <div className="max-w-6xl mx-auto px-6 py-4 flex flex-col sm:flex-row items-center justify-between gap-2 text-xs text-slate-400">
+          <div className="flex items-center gap-2">
+            <div className="w-6 h-6 rounded-md bg-blue-500 flex items-center justify-center font-bold text-white text-[10px] tracking-wide select-none flex-shrink-0">
+              FB
+            </div>
+            <span>© {new Date().getFullYear()} FBTax Cloud — Todos os direitos reservados</span>
+          </div>
           <span className="flex items-center gap-1">
             <ClaudeSun className="w-3 h-3 text-orange-400" />
             Built with Claude AI
