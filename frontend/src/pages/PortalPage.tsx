@@ -77,9 +77,8 @@ export default function PortalPage() {
           </div>
 
           <h1 className="text-3xl sm:text-4xl font-bold leading-tight mb-3 max-w-2xl flex items-center gap-3 flex-wrap">
-            Soluções <span className="text-blue-400">inteligentes</span>
-            <ClaudeSun className="w-9 h-9 sm:w-10 sm:h-10 text-orange-400 drop-shadow-[0_0_10px_rgba(251,146,60,0.8)] animate-spin [animation-duration:12s]" />
-            para sua empresa
+            <img src="/claude.png" alt="Claude AI" className="w-10 h-10 sm:w-11 sm:h-11 rounded-xl flex-shrink-0" />
+            Soluções <span className="text-blue-400">inteligentes</span> para sua empresa
           </h1>
           <p className="text-slate-300 text-sm max-w-2xl leading-relaxed">
             Plataforma integrada com ferramentas especializadas em apuração tributária,
