@@ -1,4 +1,4 @@
-import { ArrowUpRight, Clock } from 'lucide-react'
+import { ArrowUpRight, Clock, TrendingUp, Trophy, Warehouse } from 'lucide-react'
 
 export type Product = {
   id: string
@@ -15,6 +15,26 @@ const ACCENTS = [
   { bg: 'bg-violet-50',  text: 'text-violet-700',   label: 'bg-violet-100 text-violet-700',   border: '#c4b5fd', shadow: '#ddd6fe' },
   { bg: 'bg-amber-50',   text: 'text-amber-700',    label: 'bg-amber-100 text-amber-700',     border: '#fcd34d', shadow: '#fde68a' },
 ]
+
+// Ícone por produto — imagem pública ou componente lucide
+function ProductIcon({ name, accent }: { name: string; accent: typeof ACCENTS[0] }) {
+  const n = name.toLowerCase()
+
+  if (n.includes('apura')) {
+    return <img src="/leao-rfb.png" alt="Receita Federal" className="w-8 h-8 object-contain" />
+  }
+  if (n.includes('simulador')) {
+    return <TrendingUp className={`w-6 h-6 ${accent.text}`} strokeWidth={2.5} />
+  }
+  if (n.includes('farol')) {
+    return <Trophy className={`w-6 h-6 ${accent.text}`} strokeWidth={2.5} />
+  }
+  if (n.includes('smart') || n.includes('pick')) {
+    return <Warehouse className={`w-6 h-6 ${accent.text}`} strokeWidth={2} />
+  }
+  // fallback genérico
+  return <span className={`text-xl font-black ${accent.text}`}>{name.charAt(0)}</span>
+}
 
 type ProductCardProps = Product & { colorIndex?: number }
 
@@ -40,11 +60,10 @@ export function ProductCard({ name, description, icon_url, destination_url, colo
     >
       {/* Ícone */}
       <div className={`w-12 h-12 rounded-2xl ${accent.bg} flex items-center justify-center mb-4 flex-shrink-0`}>
-        {icon_url ? (
-          <img src={icon_url} alt={name} className="w-7 h-7 object-contain" />
-        ) : (
-          <span className={`text-xl font-black ${accent.text}`}>{name.charAt(0)}</span>
-        )}
+        {icon_url
+          ? <img src={icon_url} alt={name} className="w-7 h-7 object-contain" />
+          : <ProductIcon name={name} accent={accent} />
+        }
       </div>
 
       {/* Conteúdo */}
