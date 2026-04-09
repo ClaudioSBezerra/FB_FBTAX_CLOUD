@@ -21,16 +21,16 @@ function ProductIcon({ name, accent }: { name: string; accent: typeof ACCENTS[0]
   const n = name.toLowerCase()
 
   if (n.includes('apura')) {
-    return <img src="/receita-apuracao.png" alt="Receita Federal" className="w-full h-full object-cover rounded-2xl" />
+    return <img src="/receita-apuracao.png" alt="Receita Federal" className="w-full h-full object-contain" />
   }
   if (n.includes('simulador')) {
-    return <TrendingUp className={`w-6 h-6 ${accent.text}`} strokeWidth={2.5} />
+    return <TrendingUp className={`w-10 h-10 ${accent.text}`} strokeWidth={2} />
   }
   if (n.includes('farol')) {
-    return <img src="/farol.png" alt="Farol" className="w-9 h-9 object-contain" />
+    return <img src="/farol.png" alt="Farol" className="w-full h-full object-contain" />
   }
   if (n.includes('smart') || n.includes('pick')) {
-    return <Warehouse className={`w-6 h-6 ${accent.text}`} strokeWidth={2} />
+    return <Warehouse className={`w-10 h-10 ${accent.text}`} strokeWidth={1.75} />
   }
   // fallback genérico
   return <span className={`text-xl font-black ${accent.text}`}>{name.charAt(0)}</span>
@@ -59,7 +59,7 @@ export function ProductCard({ name, description, icon_url, destination_url, colo
       }}
     >
       {/* Ícone */}
-      <div className={`w-12 h-12 rounded-2xl ${accent.bg} flex items-center justify-center mb-4 flex-shrink-0`}>
+      <div className={`w-16 h-16 rounded-2xl ${accent.bg} flex items-center justify-center mb-4 flex-shrink-0 overflow-hidden`}>
         {icon_url
           ? <img src={icon_url} alt={name} className="w-7 h-7 object-contain" />
           : <ProductIcon name={name} accent={accent} />
