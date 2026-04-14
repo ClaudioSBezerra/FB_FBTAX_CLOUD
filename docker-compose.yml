@@ -31,7 +31,7 @@ services:
     networks:
       - fb_net
 
-  # Frontend (React/Nginx) — Traefik/Coolify roteia via rede coolify
+  # Frontend (React/Nginx) — sem health check (Coolify/Traefik gerencia roteamento)
   web:
     build:
       context: ./frontend
@@ -40,15 +40,8 @@ services:
       - "80"
     depends_on:
       - api
-    healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:80/ > /dev/null 2>&1 || exit 1"]
-      interval: 30s
-      timeout: 5s
-      retries: 3
-      start_period: 10s
     networks:
       - fb_net
-      - coolify
 
   # Banco de Dados
   db:
@@ -71,8 +64,6 @@ services:
 networks:
   fb_net:
     driver: bridge
-  coolify:
-    external: true
 
 volumes:
   postgres_data:
