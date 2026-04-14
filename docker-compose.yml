@@ -28,11 +28,10 @@ services:
       timeout: 10s
       retries: 5
       start_period: 40s
-    mem_limit: 256m
     networks:
       - fb_net
 
-  # Frontend (React/Nginx) — proxy gerenciado pelo Coolify via UI
+  # Frontend (React/Nginx) — Traefik/Coolify roteia via rede coolify
   web:
     build:
       context: ./frontend
@@ -47,9 +46,9 @@ services:
       timeout: 5s
       retries: 3
       start_period: 10s
-    mem_limit: 128m
     networks:
       - fb_net
+      - coolify
 
   # Banco de Dados
   db:
@@ -68,11 +67,12 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
-    mem_limit: 256m
 
 networks:
   fb_net:
     driver: bridge
+  coolify:
+    external: true
 
 volumes:
   postgres_data:
