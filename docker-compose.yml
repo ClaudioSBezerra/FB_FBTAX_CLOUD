@@ -23,11 +23,12 @@ services:
       db:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:8083/api/health"]
+      test: ["CMD", "/root/server", "-health"]
       interval: 30s
       timeout: 10s
-      retries: 3
+      retries: 5
       start_period: 40s
+    mem_limit: 256m
     networks:
       - fb_net
 
@@ -40,6 +41,13 @@ services:
       - "80"
     depends_on:
       - api
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:80/ > /dev/null 2>&1 || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    mem_limit: 128m
     networks:
       - fb_net
 
@@ -60,6 +68,7 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+    mem_limit: 256m
 
 networks:
   fb_net:

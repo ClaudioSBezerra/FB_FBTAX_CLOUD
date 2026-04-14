@@ -191,6 +191,19 @@ func onDBConnected() {
 }
 
 func main() {
+	// Health check mode — usado pelo Docker health check sem depender de wget/curl
+	if len(os.Args) > 1 && os.Args[1] == "-health" {
+		port := os.Getenv("PORT")
+		if port == "" {
+			port = "8083"
+		}
+		resp, err := http.Get("http://localhost:" + port + "/api/health")
+		if err != nil || resp.StatusCode != 200 {
+			os.Exit(1)
+		}
+		os.Exit(0)
+	}
+
 	_ = godotenv.Load()
 	fmt.Printf("FBTAX_CLOUD Backend v%s\n", BackendVersion)
 
