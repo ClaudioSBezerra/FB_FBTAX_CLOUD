@@ -1,5 +1,5 @@
 services:
-  # Backend (Go)
+  # Backend (Go) — Traefik roteia /api/* direto pra cá
   api:
     build:
       context: .
@@ -22,16 +22,20 @@ services:
     depends_on:
       db:
         condition: service_healthy
-    healthcheck:
-      test: ["CMD", "/root/server", "-health"]
-      interval: 30s
-      timeout: 10s
-      retries: 5
-      start_period: 40s
     networks:
       - fb_net
+      - coolify
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=coolify"
+      - "traefik.http.routers.fbtax-cloud-api.rule=(Host(`www.fbtax.cloud`) || Host(`fbtax.cloud`)) && PathPrefix(`/api/`)"
+      - "traefik.http.routers.fbtax-cloud-api.entrypoints=https"
+      - "traefik.http.routers.fbtax-cloud-api.tls=true"
+      - "traefik.http.routers.fbtax-cloud-api.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.fbtax-cloud-api.priority=10"
+      - "traefik.http.services.fbtax-cloud-api.loadbalancer.server.port=8086"
 
-  # Frontend (React/Nginx) — roteamento declarado via labels Traefik
+  # Frontend (React/Nginx) — Traefik roteia tudo que NÃO é /api/* pra cá
   web:
     build:
       context: ./frontend
@@ -49,6 +53,7 @@ services:
       - "traefik.http.routers.fbtax-cloud.tls=true"
       - "traefik.http.routers.fbtax-cloud.tls.certresolver=letsencrypt"
       - "traefik.http.routers.fbtax-cloud.service=fbtax-cloud"
+      - "traefik.http.routers.fbtax-cloud.priority=1"
       # Router HTTP → redireciona para HTTPS
       - "traefik.http.routers.fbtax-cloud-http.rule=Host(`www.fbtax.cloud`) || Host(`fbtax.cloud`)"
       - "traefik.http.routers.fbtax-cloud-http.entrypoints=http"
