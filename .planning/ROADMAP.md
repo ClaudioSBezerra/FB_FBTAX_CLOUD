@@ -29,7 +29,11 @@ Este milestone adiciona o Módulo Financeiro ao FBTax Cloud existente. Parte dos
   2. Admin pode salvar CNPJ, razão social e endereço completo da empresa Fortes Bezerra
   3. Admin pode salvar dados bancários (banco, agência, conta, tipo) para recebimento
   4. Admin pode editar empresa e dados bancários e as alterações persistem no banco
-**Plans**: TBD
+**Plans**: 2 plans
+
+Plans:
+- [ ] 01-01-PLAN.md — Migrations SQL (schema financeiro + tabelas) + handlers Go CRUD (GET/POST/PUT empresa e dados bancários) + registro de rotas em main.go
+- [ ] 01-02-PLAN.md — Página React EmpresaPage com dois formulários independentes + rota protegida em App.tsx + verificação humana end-to-end
 
 ### Phase 2: Cadastros Base
 **Goal**: Admin pode cadastrar clientes com múltiplos CNPJs, produtos com planos e preços, e criar contratos vinculando cliente a produtos
@@ -104,7 +108,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Fundação do Módulo | 0/TBD | Not started | - |
+| 1. Fundação do Módulo | 0/2 | Not started | - |
 | 2. Cadastros Base | 0/TBD | Not started | - |
 | 3. Motor de Tokens | 0/TBD | Not started | - |
 | 4. API de Validação | 0/TBD | Not started | - |
