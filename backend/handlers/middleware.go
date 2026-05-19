@@ -18,7 +18,8 @@ func GetAllowedOrigins() map[string]bool {
 	} else {
 		list = []string{
 			"https://www.fbtax.cloud",
-			"http://localhost:5173",
+			"http://localhost:3086",
+			"http://localhost:3083",
 		}
 	}
 	m := make(map[string]bool, len(list))
