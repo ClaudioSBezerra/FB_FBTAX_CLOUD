@@ -32,8 +32,16 @@ Este milestone adiciona o Módulo Financeiro ao FBTax Cloud existente. Parte dos
 **Plans**: 2 plans
 
 Plans:
+
+**Wave 1:**
 - [ ] 01-01-PLAN.md — Migrations SQL (schema financeiro + tabelas) + handlers Go CRUD (GET/POST/PUT empresa e dados bancários) + registro de rotas em main.go
+
+**Wave 2 *(blocked on Wave 1 completion)*:**
 - [ ] 01-02-PLAN.md — Página React EmpresaPage com dois formulários independentes + rota protegida em App.tsx + verificação humana end-to-end
+
+**Cross-cutting constraints:**
+- Todas as rotas `/api/financeiro/*` protegidas com `withAuth(..., "admin")`
+- Schema `financeiro.*` usado com nomes fully-qualified em todas as queries SQL
 
 ### Phase 2: Cadastros Base
 **Goal**: Admin pode cadastrar clientes com múltiplos CNPJs, produtos com planos e preços, e criar contratos vinculando cliente a produtos
