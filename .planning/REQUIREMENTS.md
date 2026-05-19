@@ -107,25 +107,51 @@
 
 ## Traceability
 
-*(Preenchido durante a criação do roadmap)*
-
 | Requisito | Fase | Status |
 |-----------|------|--------|
-| EMP-01 a EMP-03 | — | Pendente |
-| CLI-01 a CLI-05 | — | Pendente |
-| PROD-01 a PROD-04 | — | Pendente |
-| CONT-01 a CONT-05 | — | Pendente |
-| TOKEN-01 a TOKEN-06 | — | Pendente |
-| API-01 a API-04 | — | Pendente |
-| ADMIN-01 a ADMIN-04 | — | Pendente |
-| PORT-01 a PORT-04 | — | Pendente |
-| NAV-01 a NAV-02 | — | Pendente |
+| EMP-01 | Phase 1 — Fundação do Módulo | Pendente |
+| EMP-02 | Phase 1 — Fundação do Módulo | Pendente |
+| EMP-03 | Phase 1 — Fundação do Módulo | Pendente |
+| CLI-01 | Phase 2 — Cadastros Base | Pendente |
+| CLI-02 | Phase 2 — Cadastros Base | Pendente |
+| CLI-03 | Phase 2 — Cadastros Base | Pendente |
+| CLI-04 | Phase 2 — Cadastros Base | Pendente |
+| CLI-05 | Phase 2 — Cadastros Base | Pendente |
+| PROD-01 | Phase 2 — Cadastros Base | Pendente |
+| PROD-02 | Phase 2 — Cadastros Base | Pendente |
+| PROD-03 | Phase 2 — Cadastros Base | Pendente |
+| PROD-04 | Phase 2 — Cadastros Base | Pendente |
+| CONT-01 | Phase 2 — Cadastros Base | Pendente |
+| CONT-02 | Phase 2 — Cadastros Base | Pendente |
+| CONT-03 | Phase 2 — Cadastros Base | Pendente |
+| CONT-04 | Phase 2 — Cadastros Base | Pendente |
+| CONT-05 | Phase 2 — Cadastros Base | Pendente |
+| TOKEN-01 | Phase 3 — Motor de Tokens | Pendente |
+| TOKEN-02 | Phase 3 — Motor de Tokens | Pendente |
+| TOKEN-03 | Phase 3 — Motor de Tokens | Pendente |
+| TOKEN-04 | Phase 3 — Motor de Tokens | Pendente |
+| TOKEN-05 | Phase 3 — Motor de Tokens | Pendente |
+| TOKEN-06 | Phase 3 — Motor de Tokens | Pendente |
+| API-01 | Phase 4 — API de Validação | Pendente |
+| API-02 | Phase 4 — API de Validação | Pendente |
+| API-03 | Phase 4 — API de Validação | Pendente |
+| API-04 | Phase 4 — API de Validação | Pendente |
+| ADMIN-01 | Phase 5 — Painel Admin | Pendente |
+| ADMIN-02 | Phase 5 — Painel Admin | Pendente |
+| ADMIN-03 | Phase 5 — Painel Admin | Pendente |
+| ADMIN-04 | Phase 5 — Painel Admin | Pendente |
+| NAV-01 | Phase 5 — Painel Admin | Pendente |
+| NAV-02 | Phase 5 — Painel Admin | Pendente |
+| PORT-01 | Phase 6 — Portal do Cliente | Pendente |
+| PORT-02 | Phase 6 — Portal do Cliente | Pendente |
+| PORT-03 | Phase 6 — Portal do Cliente | Pendente |
+| PORT-04 | Phase 6 — Portal do Cliente | Pendente |
 
 **Cobertura:**
 - Requisitos v1: 36 total
-- Mapeados para fases: 0 (aguardando roadmap)
-- Não mapeados: 36 ⚠️
+- Mapeados para fases: 36/36 ✓
+- Não mapeados: 0
 
 ---
 *Requisitos definidos: 2026-05-19*
-*Última atualização: 2026-05-19 após definição inicial*
+*Última atualização: 2026-05-19 — traceability preenchida após criação do roadmap*
