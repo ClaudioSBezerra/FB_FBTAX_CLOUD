@@ -353,6 +353,10 @@ func main() {
 	// ── Portal — público (sem auth) ───────────────────────────────────────────
 	http.HandleFunc("/api/portal/products", withDB(handlers.GetPortalProductsHandler))
 
+	// ── Financeiro ────────────────────────────────────────────────────────────
+	http.HandleFunc("/api/financeiro/empresa",         withAuth(handlers.EmpresaHandler, "admin"))
+	http.HandleFunc("/api/financeiro/dados-bancarios", withAuth(handlers.DadosBancariosHandler, "admin"))
+
 	// ── Frontend estático (SPA React) ─────────────────────────────────────────
 	staticDir := "./static"
 	if _, err := os.Stat(staticDir); err == nil {
