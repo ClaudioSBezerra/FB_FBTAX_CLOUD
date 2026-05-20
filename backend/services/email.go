@@ -942,3 +942,27 @@ func getTimeBrasil() string {
 	loc := time.FixedZone("BRT", -3*3600)
 	return time.Now().In(loc).Format("02/01/2006 as 15:04")
 }
+
+// SendAlertaToken sends a token expiry alert to the specified recipient.
+func SendAlertaToken(to, razaoSocial, produto, plano, validUntil string) error {
+	config := GetEmailConfig()
+	if config.Password == "" {
+		log.Printf("[Email] SMTP não configurado, alerta de token não enviado para %s", to)
+		return nil
+	}
+
+	subject := fmt.Sprintf("Alerta: token vencendo em breve — %s", razaoSocial)
+	body := fmt.Sprintf(
+		"Fortes Bezerra — Módulo Financeiro\n\n"+
+			"O token do cliente %s para o produto %s (plano %s) vence em %s.\n\n"+
+			"Acesse o painel administrativo para renovar ou tomar as providências necessárias.\n\n"+
+			"Esta é uma mensagem automática. Não responda a este e-mail.",
+		razaoSocial, produto, plano, validUntil,
+	)
+
+	msg := []byte(fmt.Sprintf(
+		"From: %s\r\nTo: %s\r\nSubject: %s\r\nMIME-Version: 1.0\r\nContent-Type: text/plain; charset=UTF-8\r\n\r\n%s",
+		config.From, to, subject, body,
+	))
+	return sendMailSSL(config, []string{to}, msg)
+}

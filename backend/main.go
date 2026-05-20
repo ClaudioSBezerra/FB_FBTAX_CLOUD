@@ -254,6 +254,8 @@ func onDBConnected() {
 			}
 		}
 	}
+
+	handlers.StartTokenStatusUpdater(database)
 }
 
 func main() {
@@ -353,13 +355,26 @@ func main() {
 	// ── Portal — público (sem auth) ───────────────────────────────────────────
 	http.HandleFunc("/api/portal/products", withDB(handlers.GetPortalProductsHandler))
 
-	// ── Financeiro ────────────────────────────────────────────────────────────
+	// ── Financeiro — admin ────────────────────────────────────────────────────
 	http.HandleFunc("/api/financeiro/empresa",         withAuth(handlers.EmpresaHandler, "admin"))
 	http.HandleFunc("/api/financeiro/dados-bancarios", withAuth(handlers.DadosBancariosHandler, "admin"))
 	http.HandleFunc("/api/financeiro/clientes",        withAuth(handlers.ClientesHandler, "admin"))
 	http.HandleFunc("/api/financeiro/contratos",       withAuth(handlers.ContratosHandler, "admin"))
 	http.HandleFunc("/api/financeiro/planos",          withAuth(handlers.PlanosHandler, "admin"))
 	http.HandleFunc("/api/financeiro/produtos",        withAuth(handlers.ProdutosHandler, "admin"))
+	http.HandleFunc("/api/financeiro/tokens",          withAuth(handlers.TokensHandler, "admin"))
+	http.HandleFunc("/api/financeiro/api-keys",        withAuth(handlers.ApiKeysHandler, "admin"))
+	http.HandleFunc("/api/financeiro/dashboard",       withAuth(handlers.DashboardFinanceiroHandler, "admin"))
+	http.HandleFunc("/api/financeiro/portal-clientes", withAuth(handlers.PortalClientesAdminHandler, "admin"))
+
+	// ── Financeiro — portal cliente (JWT role=portal_cliente) ────────────────
+	http.HandleFunc("/api/financeiro/portal/login",     withDB(handlers.PortalLoginHandler))
+	http.HandleFunc("/api/financeiro/portal/me",        withAuth(handlers.PortalMeHandler, "portal_cliente"))
+	http.HandleFunc("/api/financeiro/portal/contratos", withAuth(handlers.PortalContratosHandler, "portal_cliente"))
+	http.HandleFunc("/api/financeiro/portal/tokens",    withAuth(handlers.PortalTokensHandler, "portal_cliente"))
+
+	// ── Validação pública (X-API-Key) ─────────────────────────────────────────
+	http.HandleFunc("/api/validacao", withDB(handlers.ValidacaoHandler))
 
 	// ── Frontend estático (SPA React) ─────────────────────────────────────────
 	staticDir := "./static"

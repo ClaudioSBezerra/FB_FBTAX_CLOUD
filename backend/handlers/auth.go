@@ -141,6 +141,21 @@ func GenerateToken(userID, role string) (string, error) {
 	return token.SignedString(getJWTSecret())
 }
 
+// generateJWTWithClaims signs a JWT with arbitrary claims using the app secret.
+func generateJWTWithClaims(claims map[string]interface{}) (string, error) {
+	mc := jwt.MapClaims{}
+	for k, v := range claims {
+		mc[k] = v
+	}
+	return jwt.NewWithClaims(jwt.SigningMethodHS256, mc).SignedString(getJWTSecret())
+}
+
+// getPortalClaims extracts JWT MapClaims from a portal request context.
+func getPortalClaims(r *http.Request) (jwt.MapClaims, bool) {
+	claims, ok := r.Context().Value(ClaimsKey).(jwt.MapClaims)
+	return claims, ok
+}
+
 func generateRefreshTokenString() string {
 	b := make([]byte, 32)
 	rand.Read(b)

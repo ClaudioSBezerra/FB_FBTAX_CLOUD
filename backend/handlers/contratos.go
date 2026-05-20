@@ -212,6 +212,7 @@ func handlePostContrato(w http.ResponseWriter, r *http.Request, db *sql.DB) {
 		}
 	}
 
+	var planoIDs []string
 	for _, item := range req.Itens {
 		if _, err := tx.Exec(`
 			INSERT INTO financeiro.contrato_itens (contrato_id, plano_id, valor_item) VALUES ($1, $2, $3)
@@ -219,6 +220,13 @@ func handlePostContrato(w http.ResponseWriter, r *http.Request, db *sql.DB) {
 			http.Error(w, "error adding contrato item", http.StatusInternalServerError)
 			return
 		}
+		planoIDs = append(planoIDs, item.PlanoID)
+	}
+
+	if err := GerarTokensContrato(tx, id, req.DataInicio, planoIDs); err != nil {
+		log.Printf("[Contratos] erro gerando tokens: %v", err)
+		http.Error(w, "error generating tokens", http.StatusInternalServerError)
+		return
 	}
 
 	if err := tx.Commit(); err != nil {
