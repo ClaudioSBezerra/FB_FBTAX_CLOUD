@@ -54,8 +54,27 @@ Plans:
   3. Admin pode cadastrar produtos (FB_APU02, FB_APU04, FB_SMARTPICK, FB_FAROL) com 5 planos de preço (Lite, Standard, Premium, Enterprise, Sob Demanda) e editar preços
   4. Admin pode criar um contrato vinculando um cliente a um ou mais produtos/planos, abrangendo múltiplos CNPJs do grupo, com data de início, valor e periodicidade
   5. Admin pode visualizar o histórico de contratos de um cliente e registrar aditivos em contratos ativos
-**Plans**: TBD
+**Plans**: 4 plans
 **UI hint**: yes
+
+Plans:
+
+**Wave 1:**
+- [ ] 02-01-PLAN.md — Migrations SQL (clientes multi-CNPJ + produtos/planos + contratos) + handlers Go CRUD completo (clientes, produtos, contratos) + registro de rotas em main.go
+
+**Wave 2 *(paralelo, blocked on Wave 1 completion)*:**
+- [ ] 02-02-PLAN.md — Frontend ClientesPage (lista com busca + Dialog cadastro/edição) + ProdutosPage (tabela de planos/preços editável)
+- [ ] 02-03-PLAN.md — Frontend ContratosPage (formulário 3 etapas para novo contrato multi-CNPJ multi-produto + lista de histórico)
+
+**Wave 3 *(blocked on Wave 2 completion)*:**
+- [ ] 02-04-PLAN.md — Verificação automatizada pré-checkpoint + checkpoint humano end-to-end do fluxo completo
+
+**Cross-cutting constraints:**
+- Todas as rotas `/api/financeiro/*` protegidas com `withAuth(..., "admin")`
+- Schema `financeiro.*` em todas as queries — nomes fully-qualified
+- CNPJ principal inserido em `financeiro.cliente_cnpjs` atomicamente no POST de cliente
+- POST de contrato usa `db.Begin()` para inserção atômica em 3 tabelas
+- Sem novos pacotes npm ou Go — apenas dependências já em go.mod e package-lock.json
 
 ### Phase 3: Motor de Tokens
 **Goal**: Contratos ativos geram tokens automaticamente e o sistema gerencia o ciclo de vida completo: validade, carência, suspensão e reativação
@@ -117,7 +136,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Fundação do Módulo | 0/2 | Not started | - |
-| 2. Cadastros Base | 0/TBD | Not started | - |
+| 2. Cadastros Base | 0/4 | Not started | - |
 | 3. Motor de Tokens | 0/TBD | Not started | - |
 | 4. API de Validação | 0/TBD | Not started | - |
 | 5. Painel Admin | 0/TBD | Not started | - |
