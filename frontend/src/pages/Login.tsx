@@ -44,7 +44,7 @@ const Login = () => {
 
       login(data);
       toast.success("Login realizado com sucesso!");
-      navigate("/dashboard/urgencia/falta");
+      navigate("/admin/financeiro");
     } catch (error: unknown) {
       const msg = error instanceof Error ? error.message : "Erro desconhecido";
       setErrorMsg(msg);
