@@ -369,6 +369,7 @@ func main() {
 	http.HandleFunc("/api/financeiro/painel",             withAuth(handlers.PainelFinanceiroHandler, "admin"))
 	http.HandleFunc("/api/financeiro/contas-financeiras", withAuth(handlers.ContasFinanceirasHandler, "admin"))
 	http.HandleFunc("/api/financeiro/transacoes",         withAuth(handlers.TransacoesHandler, "admin"))
+	http.HandleFunc("/api/financeiro/chat",               withAuth(handlers.ChatFinanceiroHandler, "admin"))
 
 	// ── Financeiro — portal cliente (JWT role=portal_cliente) ────────────────
 	http.HandleFunc("/api/financeiro/portal/login",     withDB(handlers.PortalLoginHandler))

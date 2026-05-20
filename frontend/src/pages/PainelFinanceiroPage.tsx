@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -8,7 +8,7 @@ import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts'
-import { TrendingUp, TrendingDown, Wallet, Building2, Plus, ExternalLink, Info } from 'lucide-react'
+import { TrendingUp, TrendingDown, Wallet, Building2, Plus, ExternalLink, Info, Bot, Send, Loader2, ChevronDown, ChevronUp } from 'lucide-react'
 import { toast } from 'sonner'
 
 interface PainelData {
@@ -42,6 +42,201 @@ interface Transacao {
   tipo: 'credito' | 'debito'
   categoria?: string
   conciliado: boolean
+}
+
+// ── Tipos de chat ─────────────────────────────────────────────────────────────
+interface ChatMsg {
+  role: 'user' | 'assistant'
+  content: string
+  sql?: string
+  columns?: string[]
+  rows?: Record<string, unknown>[]
+  truncado?: boolean
+  erro?: string
+}
+
+const SUGESTOES = [
+  'Quais foram as maiores despesas deste mês?',
+  'Total de entradas e saídas por mês em 2026',
+  'Qual meu saldo atual e resultado líquido do ano?',
+  'Gastos por categoria nos últimos 30 dias',
+]
+
+// ── Chat IA ───────────────────────────────────────────────────────────────────
+function ChatIA() {
+  const [msgs, setMsgs] = useState<ChatMsg[]>([])
+  const [input, setInput] = useState('')
+  const [loading, setLoading] = useState(false)
+  const [sqlAberto, setSqlAberto] = useState<Record<number, boolean>>({})
+  const bottomRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
+  }, [msgs])
+
+  const enviar = async (pergunta: string) => {
+    if (!pergunta.trim() || loading) return
+    const historico = msgs.map(m => ({ role: m.role, content: m.content }))
+    setMsgs(prev => [...prev, { role: 'user', content: pergunta }])
+    setInput('')
+    setLoading(true)
+    try {
+      const res = await fetch('/api/financeiro/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ pergunta, historico }),
+      })
+      const data = await res.json()
+      if (!res.ok || data.erro) {
+        setMsgs(prev => [...prev, { role: 'assistant', content: '', erro: data.erro || 'Erro desconhecido' }])
+      } else {
+        setMsgs(prev => [...prev, {
+          role: 'assistant',
+          content: data.reply,
+          sql: data.sql,
+          columns: data.columns,
+          rows: data.rows,
+          truncado: data.truncado,
+        }])
+      }
+    } catch {
+      setMsgs(prev => [...prev, { role: 'assistant', content: '', erro: 'Erro de conexão' }])
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  return (
+    <Card className="border-violet-100">
+      <CardHeader className="pb-3">
+        <CardTitle className="text-sm font-semibold flex items-center gap-2">
+          <Bot className="w-4 h-4 text-violet-600" />
+          Assistente Financeiro IA
+          <Badge variant="outline" className="text-[10px] text-violet-700 border-violet-300 bg-violet-50 ml-auto">
+            GLM-4.5 · Z.AI
+          </Badge>
+        </CardTitle>
+        <CardDescription className="text-xs">
+          Faça perguntas sobre suas movimentações financeiras em linguagem natural.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-3">
+
+        {/* Sugestões — aparecem só quando não há mensagens */}
+        {msgs.length === 0 && (
+          <div className="flex flex-wrap gap-2">
+            {SUGESTOES.map(s => (
+              <button
+                key={s}
+                onClick={() => enviar(s)}
+                className="text-xs border border-violet-200 bg-violet-50 text-violet-700 rounded-full px-3 py-1 hover:bg-violet-100 transition-colors text-left"
+              >
+                {s}
+              </button>
+            ))}
+          </div>
+        )}
+
+        {/* Histórico de mensagens */}
+        {msgs.length > 0 && (
+          <div className="space-y-4 max-h-[480px] overflow-y-auto pr-1">
+            {msgs.map((m, i) => (
+              <div key={i} className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                <div className={`max-w-[85%] space-y-2 ${m.role === 'user' ? 'items-end' : 'items-start'} flex flex-col`}>
+
+                  {/* Balão da mensagem */}
+                  <div className={`rounded-2xl px-4 py-2.5 text-sm leading-relaxed ${
+                    m.role === 'user'
+                      ? 'bg-violet-600 text-white rounded-br-sm'
+                      : m.erro
+                        ? 'bg-red-50 border border-red-200 text-red-700 rounded-bl-sm'
+                        : 'bg-slate-100 text-slate-800 rounded-bl-sm'
+                  }`}>
+                    {m.erro ? `⚠️ ${m.erro}` : m.content}
+                  </div>
+
+                  {/* Tabela de resultado */}
+                  {m.columns && m.rows && m.rows.length > 0 && (
+                    <div className="w-full overflow-x-auto rounded-lg border text-xs">
+                      <table className="w-full">
+                        <thead className="bg-slate-50">
+                          <tr>
+                            {m.columns.map(c => (
+                              <th key={c} className="px-3 py-2 text-left font-semibold text-slate-600 whitespace-nowrap">{c}</th>
+                            ))}
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {m.rows.map((row, ri) => (
+                            <tr key={ri} className="border-t hover:bg-slate-50">
+                              {m.columns!.map(c => (
+                                <td key={c} className="px-3 py-1.5 text-slate-700 whitespace-nowrap">
+                                  {String(row[c] ?? '')}
+                                </td>
+                              ))}
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                      {m.truncado && (
+                        <p className="text-center text-[10px] text-muted-foreground py-1 border-t">
+                          Resultado truncado em 200 linhas.
+                        </p>
+                      )}
+                    </div>
+                  )}
+
+                  {/* SQL gerado — colapsável */}
+                  {m.sql && (
+                    <button
+                      onClick={() => setSqlAberto(p => ({ ...p, [i]: !p[i] }))}
+                      className="flex items-center gap-1 text-[10px] text-muted-foreground hover:text-slate-600"
+                    >
+                      {sqlAberto[i] ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+                      {sqlAberto[i] ? 'Ocultar SQL' : 'Ver SQL gerado'}
+                    </button>
+                  )}
+                  {m.sql && sqlAberto[i] && (
+                    <pre className="text-[10px] bg-slate-900 text-slate-200 rounded-lg p-3 overflow-x-auto w-full">
+                      {m.sql}
+                    </pre>
+                  )}
+                </div>
+              </div>
+            ))}
+            {loading && (
+              <div className="flex justify-start">
+                <div className="bg-slate-100 rounded-2xl rounded-bl-sm px-4 py-2.5 flex items-center gap-2 text-sm text-slate-500">
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" /> Analisando...
+                </div>
+              </div>
+            )}
+            <div ref={bottomRef} />
+          </div>
+        )}
+
+        {/* Input */}
+        <form
+          onSubmit={e => { e.preventDefault(); enviar(input) }}
+          className="flex gap-2 pt-1"
+        >
+          <Input
+            value={input}
+            onChange={e => setInput(e.target.value)}
+            placeholder="Ex: Quais despesas de Uber em janeiro?"
+            className="flex-1 text-sm"
+            disabled={loading}
+          />
+          <Button type="submit" size="sm" disabled={loading || !input.trim()} className="bg-violet-600 hover:bg-violet-700">
+            {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+          </Button>
+        </form>
+        <p className="text-[10px] text-muted-foreground text-center">
+          As respostas são geradas por IA a partir dos dados reais cadastrados. Verifique valores importantes.
+        </p>
+      </CardContent>
+    </Card>
+  )
 }
 
 function fmt(v: number) {
@@ -294,6 +489,9 @@ export default function PainelFinanceiroPage() {
             </CardContent>
           </Card>
         </div>
+
+        {/* ── Chat IA ── */}
+        <ChatIA />
 
         {/* ── Seção Open Finance / Cumbuca ── */}
         <Card className="border-blue-100 bg-blue-50/40">
