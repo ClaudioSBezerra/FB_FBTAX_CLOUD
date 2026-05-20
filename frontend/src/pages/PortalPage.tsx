@@ -76,7 +76,18 @@ export default function PortalPage() {
 
       {/* ── Hero ── */}
       <header className="bg-gradient-to-br from-slate-900 via-blue-950 to-slate-800 text-white">
-        <div className="max-w-6xl mx-auto px-6 py-8">
+        <div className="max-w-6xl mx-auto px-6 pt-4 pb-8">
+
+          {/* ── Barra superior com link admin ── */}
+          <div className="flex justify-end mb-6">
+            <Link
+              to="/admin/login"
+              className="text-sm text-slate-300 hover:text-white border border-slate-600 hover:border-slate-400 px-4 py-1.5 rounded-lg transition-colors"
+            >
+              Área Administrativa
+            </Link>
+          </div>
+
           <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-6">
 
             {/* Esquerda: ícone Claude + título + subtítulo */}
@@ -84,11 +95,9 @@ export default function PortalPage() {
               <div className="flex items-center gap-3 mb-1">
                 <img src="/claude.png" alt="Claude AI" className="w-10 h-10 sm:w-11 sm:h-11 rounded-xl flex-shrink-0" />
                 <div>
-                  {/* Linha 1: destaque */}
                   <h1 className="text-3xl sm:text-4xl font-bold leading-tight">
                     Soluções <span className="text-blue-400">inteligentes</span>
                   </h1>
-                  {/* Linha 2: complemento em tamanho menor */}
                   <p className="text-xl sm:text-2xl font-semibold text-slate-300 leading-tight">
                     para sua empresa
                   </p>
@@ -206,19 +215,10 @@ export default function PortalPage() {
             </div>
             <span>© {new Date().getFullYear()} FBTax Cloud — Todos os direitos reservados</span>
           </div>
-          <div className="flex items-center gap-3">
-            <Link
-              to="/admin/login"
-              className="text-slate-400 hover:text-slate-600 transition-colors underline-offset-2 hover:underline"
-            >
-              Área Administrativa
-            </Link>
-            <span className="text-slate-200">·</span>
-            <span className="flex items-center gap-1">
-              <ClaudeSun className="w-3 h-3 text-orange-400" />
-              Built with Claude AI
-            </span>
-          </div>
+          <span className="flex items-center gap-1">
+            <ClaudeSun className="w-3 h-3 text-orange-400" />
+            Built with Claude AI
+          </span>
         </div>
       </footer>
     </div>
