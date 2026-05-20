@@ -13,6 +13,7 @@ import DashboardFinanceiroPage from './pages/DashboardFinanceiroPage'
 import PortalClientesAdminPage from './pages/PortalClientesAdminPage'
 import PortalLoginPage from './pages/PortalLoginPage'
 import PortalDashboardPage from './pages/PortalDashboardPage'
+import FinanceiroLayout from './components/FinanceiroLayout'
 import { AuthProvider, useAuth } from './contexts/AuthContext'
 import { Button } from '@/components/ui/button'
 
@@ -23,6 +24,14 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
   if (loading) return null
   if (!isAuthenticated) return <Navigate to="/admin/login" replace />
   return <>{children}</>
+}
+
+function FinanceiroRoute({ children }: { children: React.ReactNode }) {
+  return (
+    <ProtectedRoute>
+      <FinanceiroLayout>{children}</FinanceiroLayout>
+    </ProtectedRoute>
+  )
 }
 
 function AdminIndex() {
@@ -55,30 +64,30 @@ function App() {
               <ProtectedRoute><AdminIndex /></ProtectedRoute>
             } />
 
-            {/* Financeiro — Fortes Bezerra */}
+            {/* Financeiro — Fortes Bezerra (com sidebar) */}
             <Route path="/admin/financeiro" element={
-              <ProtectedRoute><DashboardFinanceiroPage /></ProtectedRoute>
+              <FinanceiroRoute><DashboardFinanceiroPage /></FinanceiroRoute>
             } />
             <Route path="/admin/financeiro/empresa" element={
-              <ProtectedRoute><EmpresaPage /></ProtectedRoute>
+              <FinanceiroRoute><EmpresaPage /></FinanceiroRoute>
             } />
             <Route path="/admin/financeiro/clientes" element={
-              <ProtectedRoute><ClientesPage /></ProtectedRoute>
+              <FinanceiroRoute><ClientesPage /></FinanceiroRoute>
             } />
             <Route path="/admin/financeiro/produtos" element={
-              <ProtectedRoute><ProdutosPage /></ProtectedRoute>
+              <FinanceiroRoute><ProdutosPage /></FinanceiroRoute>
             } />
             <Route path="/admin/financeiro/contratos" element={
-              <ProtectedRoute><ContratosPage /></ProtectedRoute>
+              <FinanceiroRoute><ContratosPage /></FinanceiroRoute>
             } />
             <Route path="/admin/financeiro/tokens" element={
-              <ProtectedRoute><TokensPage /></ProtectedRoute>
+              <FinanceiroRoute><TokensPage /></FinanceiroRoute>
             } />
             <Route path="/admin/financeiro/api-keys" element={
-              <ProtectedRoute><ApiKeysPage /></ProtectedRoute>
+              <FinanceiroRoute><ApiKeysPage /></FinanceiroRoute>
             } />
             <Route path="/admin/financeiro/portal-clientes" element={
-              <ProtectedRoute><PortalClientesAdminPage /></ProtectedRoute>
+              <FinanceiroRoute><PortalClientesAdminPage /></FinanceiroRoute>
             } />
 
             {/* Portal do cliente (auth própria) */}
