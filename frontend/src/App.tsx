@@ -3,6 +3,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { Toaster } from '@/components/ui/sonner'
 import Login from './pages/Login'
 import PortalPage from './pages/PortalPage'
+import EmpresaPage from './pages/EmpresaPage'
 import { AuthProvider, useAuth } from './contexts/AuthContext'
 
 const queryClient = new QueryClient()
@@ -28,6 +29,13 @@ function App() {
             <Route path="/admin" element={
               <ProtectedRoute>
                 <div>AdminDashboard — em breve</div>
+              </ProtectedRoute>
+            } />
+
+            {/* Financeiro */}
+            <Route path="/admin/financeiro/empresa" element={
+              <ProtectedRoute>
+                <EmpresaPage />
               </ProtectedRoute>
             } />
 
