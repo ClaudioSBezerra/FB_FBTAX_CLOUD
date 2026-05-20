@@ -356,6 +356,10 @@ func main() {
 	// ── Financeiro ────────────────────────────────────────────────────────────
 	http.HandleFunc("/api/financeiro/empresa",         withAuth(handlers.EmpresaHandler, "admin"))
 	http.HandleFunc("/api/financeiro/dados-bancarios", withAuth(handlers.DadosBancariosHandler, "admin"))
+	http.HandleFunc("/api/financeiro/clientes",        withAuth(handlers.ClientesHandler, "admin"))
+	http.HandleFunc("/api/financeiro/contratos",       withAuth(handlers.ContratosHandler, "admin"))
+	http.HandleFunc("/api/financeiro/planos",          withAuth(handlers.PlanosHandler, "admin"))
+	http.HandleFunc("/api/financeiro/produtos",        withAuth(handlers.ProdutosHandler, "admin"))
 
 	// ── Frontend estático (SPA React) ─────────────────────────────────────────
 	staticDir := "./static"
