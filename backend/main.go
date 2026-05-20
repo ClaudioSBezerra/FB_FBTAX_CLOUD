@@ -365,7 +365,10 @@ func main() {
 	http.HandleFunc("/api/financeiro/tokens",          withAuth(handlers.TokensHandler, "admin"))
 	http.HandleFunc("/api/financeiro/api-keys",        withAuth(handlers.ApiKeysHandler, "admin"))
 	http.HandleFunc("/api/financeiro/dashboard",       withAuth(handlers.DashboardFinanceiroHandler, "admin"))
-	http.HandleFunc("/api/financeiro/portal-clientes", withAuth(handlers.PortalClientesAdminHandler, "admin"))
+	http.HandleFunc("/api/financeiro/portal-clientes",    withAuth(handlers.PortalClientesAdminHandler, "admin"))
+	http.HandleFunc("/api/financeiro/painel",             withAuth(handlers.PainelFinanceiroHandler, "admin"))
+	http.HandleFunc("/api/financeiro/contas-financeiras", withAuth(handlers.ContasFinanceirasHandler, "admin"))
+	http.HandleFunc("/api/financeiro/transacoes",         withAuth(handlers.TransacoesHandler, "admin"))
 
 	// ── Financeiro — portal cliente (JWT role=portal_cliente) ────────────────
 	http.HandleFunc("/api/financeiro/portal/login",     withDB(handlers.PortalLoginHandler))

@@ -10,6 +10,7 @@ import ContratosPage from './pages/ContratosPage'
 import TokensPage from './pages/TokensPage'
 import ApiKeysPage from './pages/ApiKeysPage'
 import DashboardFinanceiroPage from './pages/DashboardFinanceiroPage'
+import PainelFinanceiroPage from './pages/PainelFinanceiroPage'
 import PortalClientesAdminPage from './pages/PortalClientesAdminPage'
 import PortalLoginPage from './pages/PortalLoginPage'
 import PortalDashboardPage from './pages/PortalDashboardPage'
@@ -67,6 +68,9 @@ function App() {
             {/* Financeiro — Fortes Bezerra (com sidebar) */}
             <Route path="/admin/financeiro" element={
               <FinanceiroRoute><DashboardFinanceiroPage /></FinanceiroRoute>
+            } />
+            <Route path="/admin/financeiro/painel" element={
+              <FinanceiroRoute><PainelFinanceiroPage /></FinanceiroRoute>
             } />
             <Route path="/admin/financeiro/empresa" element={
               <FinanceiroRoute><EmpresaPage /></FinanceiroRoute>

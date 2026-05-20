@@ -3,6 +3,7 @@ import { useAuth } from '@/contexts/AuthContext'
 
 const navItems = [
   { label: 'Dashboard', path: '/admin/financeiro' },
+  { label: 'Painel Financeiro', path: '/admin/financeiro/painel' },
   { label: 'Empresa', path: '/admin/financeiro/empresa' },
   { label: 'Clientes', path: '/admin/financeiro/clientes' },
   { label: 'Produtos', path: '/admin/financeiro/produtos' },
