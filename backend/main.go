@@ -374,7 +374,8 @@ func main() {
 	http.HandleFunc("/api/financeiro/portal/tokens",    withAuth(handlers.PortalTokensHandler, "portal_cliente"))
 
 	// ── Validação pública (X-API-Key) ─────────────────────────────────────────
-	http.HandleFunc("/api/cep",      withDB(handlers.CEPProxyHandler))
+	http.HandleFunc("/api/cep",    withDB(handlers.CEPProxyHandler))
+	http.HandleFunc("/api/bancos", withDB(handlers.BancosHandler))
 	http.HandleFunc("/api/validacao", withDB(handlers.ValidacaoHandler))
 
 	// ── Frontend estático (SPA React) ─────────────────────────────────────────

@@ -8,6 +8,11 @@ import { Alert, AlertDescription } from '@/components/ui/alert'
 import { toast } from 'sonner'
 import { buscarCEP } from '@/lib/viacep'
 
+interface Banco {
+  code: number
+  name: string
+}
+
 interface Empresa {
   id?: string
   razao_social: string
@@ -50,11 +55,16 @@ export default function EmpresaPage() {
     conta: '',
     tipo_conta: '',
   })
+  const [bancos, setBancos] = useState<Banco[]>([])
   const [loading, setLoading] = useState(true)
   const [buscandoCEP, setBuscandoCEP] = useState(false)
   const [submittingEmpresa, setSubmittingEmpresa] = useState(false)
   const [submittingDados, setSubmittingDados] = useState(false)
   const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    fetch('/api/bancos').then(r => r.ok ? r.json() : []).then(setBancos).catch(() => {})
+  }, [])
 
   useEffect(() => {
     const fetchData = async () => {
@@ -304,11 +314,21 @@ export default function EmpresaPage() {
                 <Label htmlFor="banco">Banco *</Label>
                 <Input
                   id="banco"
+                  list="bancos-list"
                   value={dadosBancarios.banco}
                   onChange={e => setDadosBancarios(prev => ({ ...prev, banco: e.target.value }))}
                   disabled={!empresa.id}
+                  placeholder="Digite o código ou nome do banco..."
                   required
                 />
+                <datalist id="bancos-list">
+                  {bancos.map(b => (
+                    <option
+                      key={b.code}
+                      value={`${String(b.code).padStart(3, '0')} - ${b.name}`}
+                    />
+                  ))}
+                </datalist>
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div>
