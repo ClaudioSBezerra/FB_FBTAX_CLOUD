@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { useSearchParams } from 'react-router-dom'
+import { useSearchParams, Link } from 'react-router-dom'
 import { ProductCard, type Product } from '@/components/ProductCard'
 import { Skeleton } from '@/components/ui/skeleton'
 import { AlertCircle, Sparkles, Zap, Shield, Clock3, Lock } from 'lucide-react'
@@ -206,10 +206,19 @@ export default function PortalPage() {
             </div>
             <span>© {new Date().getFullYear()} FBTax Cloud — Todos os direitos reservados</span>
           </div>
-          <span className="flex items-center gap-1">
-            <ClaudeSun className="w-3 h-3 text-orange-400" />
-            Built with Claude AI
-          </span>
+          <div className="flex items-center gap-3">
+            <Link
+              to="/admin/login"
+              className="text-slate-400 hover:text-slate-600 transition-colors underline-offset-2 hover:underline"
+            >
+              Área Administrativa
+            </Link>
+            <span className="text-slate-200">·</span>
+            <span className="flex items-center gap-1">
+              <ClaudeSun className="w-3 h-3 text-orange-400" />
+              Built with Claude AI
+            </span>
+          </div>
         </div>
       </footer>
     </div>
