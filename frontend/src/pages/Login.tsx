@@ -7,13 +7,13 @@ import { toast } from "sonner";
 import { useNavigate, Link } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { AlertCircle, BarChart3, FileUp, Zap, ShieldCheck } from "lucide-react";
+import { AlertCircle, Users, FileText, KeyRound, LayoutDashboard } from "lucide-react";
 
 const FEATURES = [
-  { icon: FileUp,    text: "Importação automática de dados WMS" },
-  { icon: Zap,       text: "Motor de calibragem por curva ABC" },
-  { icon: BarChart3, text: "Dashboard de urgência em tempo real" },
-  { icon: ShieldCheck, text: "Aprovação de propostas com rastreabilidade" },
+  { icon: Users,           text: "Gestão de clientes e contratos"          },
+  { icon: KeyRound,        text: "Tokens de licença com ciclo de vida"     },
+  { icon: FileText,        text: "Portal de acesso para clientes"          },
+  { icon: LayoutDashboard, text: "Dashboard financeiro em tempo real"      },
 ];
 
 const Login = () => {
@@ -71,11 +71,11 @@ const Login = () => {
         {/* ── Topo: logotipo do produto ── */}
         <div className="relative z-10">
           <div className="flex items-center gap-3 mb-12">
-            <div className="w-10 h-10 rounded-xl flex items-center justify-center"
+            <div className="w-10 h-10 rounded-xl flex items-center justify-center font-bold text-white text-sm tracking-wide select-none"
               style={{ background: "#2563eb" }}>
-              <BarChart3 className="w-6 h-6 text-white" />
+              FB
             </div>
-            <span className="text-white text-xl font-bold tracking-tight">SmartPick</span>
+            <span className="text-white text-xl font-bold tracking-tight">Fortes Bezerra</span>
           </div>
 
           {/* Badge */}
@@ -85,20 +85,20 @@ const Login = () => {
               color: "#93c5fd",
               border: "1px solid rgba(37,99,235,0.3)",
             }}>
-            Calibragem Inteligente de Picking
+            Módulo Financeiro
           </span>
 
           {/* Título */}
           <h1 className="text-white text-4xl font-bold leading-tight mt-5">
-            Reduza rupturas.
+            Contratos e licenças
             <br />
-            <span style={{ color: "#60a5fa" }}>Otimize seu CD.</span>
+            <span style={{ color: "#60a5fa" }}>sob controle.</span>
           </h1>
 
           {/* Subtítulo */}
           <p className="mt-5 text-base leading-relaxed" style={{ color: "#94a3b8" }}>
-            O motor de calibragem transforma dados do WMS em propostas
-            inteligentes de capacidade — com aprovação rastreável e relatórios operacionais.
+            Gerencie clientes, contratos e tokens de acesso aos produtos FB —
+            com portal de autoatendimento e rastreabilidade completa.
           </p>
         </div>
 
@@ -117,7 +117,7 @@ const Login = () => {
           </ul>
 
           <p className="text-xs pt-2" style={{ color: "#475569" }}>
-            © {new Date().getFullYear()} Fortes Bezerra Tecnologia · SmartPick v1.0
+            © {new Date().getFullYear()} Fortes Bezerra Tecnologia · FBTax Cloud
           </p>
         </div>
       </div>
@@ -128,11 +128,11 @@ const Login = () => {
 
           {/* Logo mobile (só aparece em telas pequenas) */}
           <div className="flex lg:hidden items-center justify-center gap-2 mb-8">
-            <div className="w-8 h-8 rounded-lg flex items-center justify-center"
+            <div className="w-8 h-8 rounded-lg flex items-center justify-center font-bold text-white text-xs tracking-wide select-none"
               style={{ background: "#2563eb" }}>
-              <BarChart3 className="w-5 h-5 text-white" />
+              FB
             </div>
-            <span className="text-lg font-bold text-gray-900">SmartPick</span>
+            <span className="text-lg font-bold text-gray-900">Fortes Bezerra</span>
           </div>
 
           <Card className="w-full shadow-md border-0">
