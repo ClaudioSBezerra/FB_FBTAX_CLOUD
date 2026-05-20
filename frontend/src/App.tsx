@@ -4,6 +4,9 @@ import { Toaster } from '@/components/ui/sonner'
 import Login from './pages/Login'
 import PortalPage from './pages/PortalPage'
 import EmpresaPage from './pages/EmpresaPage'
+import ClientesPage from './pages/ClientesPage'
+import ProdutosPage from './pages/ProdutosPage'
+import ContratosPage from './pages/ContratosPage'
 import { AuthProvider, useAuth } from './contexts/AuthContext'
 
 const queryClient = new QueryClient()
@@ -36,6 +39,21 @@ function App() {
             <Route path="/admin/financeiro/empresa" element={
               <ProtectedRoute>
                 <EmpresaPage />
+              </ProtectedRoute>
+            } />
+            <Route path="/admin/financeiro/clientes" element={
+              <ProtectedRoute>
+                <ClientesPage />
+              </ProtectedRoute>
+            } />
+            <Route path="/admin/financeiro/produtos" element={
+              <ProtectedRoute>
+                <ProdutosPage />
+              </ProtectedRoute>
+            } />
+            <Route path="/admin/financeiro/contratos" element={
+              <ProtectedRoute>
+                <ContratosPage />
               </ProtectedRoute>
             } />
 
