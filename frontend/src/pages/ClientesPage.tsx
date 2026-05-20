@@ -8,6 +8,7 @@ import { Badge } from '@/components/ui/badge'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { toast } from 'sonner'
+import { buscarCEP } from '@/lib/viacep'
 
 interface Cliente {
   id?: string
@@ -17,6 +18,13 @@ interface Cliente {
   telefone?: string
   responsavel?: string
   ativo: boolean
+  cep?: string
+  logradouro?: string
+  numero?: string
+  complemento?: string
+  bairro?: string
+  municipio?: string
+  uf?: string
 }
 
 function formatCNPJ(cnpj: string): string {
@@ -25,6 +33,13 @@ function formatCNPJ(cnpj: string): string {
   return digits.replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/, '$1.$2.$3/$4-$5')
 }
 
+const emptyCliente = (): Cliente => ({
+  razao_social: '', cnpj: '', ativo: true,
+  cep: '', logradouro: '', numero: '', complemento: '',
+  bairro: '', municipio: '', uf: '',
+  email: '', telefone: '', responsavel: '',
+})
+
 export default function ClientesPage() {
   const [clientes, setClientes] = useState<Cliente[]>([])
   const [editando, setEditando] = useState<Cliente | null>(null)
@@ -32,6 +47,7 @@ export default function ClientesPage() {
   const [statusFiltro, setStatusFiltro] = useState<'todos' | 'ativo' | 'inativo'>('todos')
   const [loading, setLoading] = useState(true)
   const [submitting, setSubmitting] = useState(false)
+  const [buscandoCEP, setBuscandoCEP] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
@@ -58,10 +74,31 @@ export default function ClientesPage() {
         setLoading(false)
       }
     }, busca ? 300 : 0)
-    return () => {
-      if (timerRef.current) clearTimeout(timerRef.current)
-    }
+    return () => { if (timerRef.current) clearTimeout(timerRef.current) }
   }, [busca, statusFiltro])
+
+  const handleCEPBlur = async () => {
+    if (!editando) return
+    const digits = (editando.cep || '').replace(/\D/g, '')
+    if (digits.length !== 8) return
+    setBuscandoCEP(true)
+    try {
+      const result = await buscarCEP(digits)
+      if (result) {
+        setEditando(prev => prev ? {
+          ...prev,
+          logradouro: result.logradouro || prev.logradouro,
+          bairro: result.bairro || prev.bairro,
+          municipio: result.localidade || prev.municipio,
+          uf: result.uf || prev.uf,
+        } : prev)
+      } else {
+        toast.error('CEP não encontrado')
+      }
+    } finally {
+      setBuscandoCEP(false)
+    }
+  }
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -90,6 +127,9 @@ export default function ClientesPage() {
     }
   }
 
+  const upd = (field: keyof Cliente) => (e: React.ChangeEvent<HTMLInputElement>) =>
+    setEditando(prev => prev ? { ...prev, [field]: e.target.value } : prev)
+
   if (loading) {
     return <div className="min-h-screen p-8 flex items-center justify-center">Carregando...</div>
   }
@@ -106,9 +146,7 @@ export default function ClientesPage() {
         <Card>
           <CardHeader className="flex flex-row items-center justify-between">
             <CardTitle>Clientes</CardTitle>
-            <Button onClick={() => setEditando({ razao_social: '', cnpj: '', ativo: true })}>
-              Novo Cliente
-            </Button>
+            <Button onClick={() => setEditando(emptyCliente())}>Novo Cliente</Button>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="flex gap-3">
@@ -134,6 +172,7 @@ export default function ClientesPage() {
                 <TableRow>
                   <TableHead>Razão Social</TableHead>
                   <TableHead>CNPJ</TableHead>
+                  <TableHead>Município / UF</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead className="w-24">Ações</TableHead>
                 </TableRow>
@@ -141,7 +180,7 @@ export default function ClientesPage() {
               <TableBody>
                 {clientes.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={4} className="text-center text-muted-foreground py-8">
+                    <TableCell colSpan={5} className="text-center text-muted-foreground py-8">
                       Nenhum cliente encontrado.
                     </TableCell>
                   </TableRow>
@@ -150,6 +189,9 @@ export default function ClientesPage() {
                     <TableRow key={c.id}>
                       <TableCell className="font-medium">{c.razao_social}</TableCell>
                       <TableCell>{formatCNPJ(c.cnpj)}</TableCell>
+                      <TableCell className="text-muted-foreground text-sm">
+                        {c.municipio ? `${c.municipio}${c.uf ? ' / ' + c.uf : ''}` : '—'}
+                      </TableCell>
                       <TableCell>
                         <Badge variant={c.ativo ? 'default' : 'secondary'}>
                           {c.ativo ? 'Ativo' : 'Inativo'}
@@ -169,57 +211,101 @@ export default function ClientesPage() {
         </Card>
 
         <Dialog open={editando !== null} onOpenChange={open => !open && setEditando(null)}>
-          <DialogContent>
+          <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle>{editando?.id ? 'Editar Cliente' : 'Novo Cliente'}</DialogTitle>
             </DialogHeader>
             {editando && (
-              <form onSubmit={handleSave} className="space-y-4">
-                <div>
-                  <Label htmlFor="razao_social">Razão Social *</Label>
-                  <Input
-                    id="razao_social"
-                    value={editando.razao_social}
-                    onChange={e => setEditando(prev => prev ? { ...prev, razao_social: e.target.value } : prev)}
-                    required
-                  />
+              <form onSubmit={handleSave} className="space-y-5">
+
+                {/* ── Identificação ── */}
+                <div className="space-y-3">
+                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Identificação</p>
+                  <div>
+                    <Label htmlFor="razao_social">Razão Social *</Label>
+                    <Input id="razao_social" value={editando.razao_social} onChange={upd('razao_social')} required />
+                  </div>
+                  <div>
+                    <Label htmlFor="cnpj">CNPJ *</Label>
+                    <Input
+                      id="cnpj"
+                      value={editando.cnpj}
+                      onChange={e => setEditando(prev => prev ? { ...prev, cnpj: e.target.value.replace(/\D/g, '') } : prev)}
+                      maxLength={14}
+                      placeholder="Somente números"
+                      required
+                    />
+                  </div>
                 </div>
-                <div>
-                  <Label htmlFor="cnpj">CNPJ *</Label>
-                  <Input
-                    id="cnpj"
-                    value={editando.cnpj}
-                    onChange={e => setEditando(prev => prev ? { ...prev, cnpj: e.target.value.replace(/\D/g, '') } : prev)}
-                    maxLength={14}
-                    placeholder="Somente números"
-                    required
-                  />
+
+                {/* ── Endereço ── */}
+                <div className="space-y-3">
+                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Endereço</p>
+                  <div>
+                    <Label htmlFor="cep">CEP</Label>
+                    <Input
+                      id="cep"
+                      value={editando.cep || ''}
+                      onChange={e => setEditando(prev => prev ? { ...prev, cep: e.target.value.replace(/\D/g, '') } : prev)}
+                      onBlur={handleCEPBlur}
+                      maxLength={8}
+                      placeholder={buscandoCEP ? 'Buscando...' : '00000000'}
+                      disabled={buscandoCEP}
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="logradouro">Logradouro</Label>
+                    <Input id="logradouro" value={editando.logradouro || ''} onChange={upd('logradouro')} />
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <Label htmlFor="numero">Número</Label>
+                      <Input id="numero" value={editando.numero || ''} onChange={upd('numero')} />
+                    </div>
+                    <div>
+                      <Label htmlFor="complemento">Complemento</Label>
+                      <Input id="complemento" value={editando.complemento || ''} onChange={upd('complemento')} />
+                    </div>
+                  </div>
+                  <div>
+                    <Label htmlFor="bairro">Bairro</Label>
+                    <Input id="bairro" value={editando.bairro || ''} onChange={upd('bairro')} />
+                  </div>
+                  <div className="grid grid-cols-4 gap-3">
+                    <div className="col-span-3">
+                      <Label htmlFor="municipio">Município</Label>
+                      <Input id="municipio" value={editando.municipio || ''} onChange={upd('municipio')} />
+                    </div>
+                    <div>
+                      <Label htmlFor="uf">UF</Label>
+                      <Input
+                        id="uf"
+                        maxLength={2}
+                        value={editando.uf || ''}
+                        onChange={e => setEditando(prev => prev ? { ...prev, uf: e.target.value.toUpperCase() } : prev)}
+                      />
+                    </div>
+                  </div>
                 </div>
-                <div>
-                  <Label htmlFor="email">E-mail</Label>
-                  <Input
-                    id="email"
-                    type="email"
-                    value={editando.email || ''}
-                    onChange={e => setEditando(prev => prev ? { ...prev, email: e.target.value } : prev)}
-                  />
+
+                {/* ── Contato ── */}
+                <div className="space-y-3">
+                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Contato</p>
+                  <div>
+                    <Label htmlFor="responsavel">Responsável / Contato</Label>
+                    <Input id="responsavel" value={editando.responsavel || ''} onChange={upd('responsavel')} />
+                  </div>
+                  <div>
+                    <Label htmlFor="email">E-mail do Contato</Label>
+                    <Input id="email" type="email" value={editando.email || ''} onChange={upd('email')} />
+                  </div>
+                  <div>
+                    <Label htmlFor="telefone">Fone (com DDD)</Label>
+                    <Input id="telefone" value={editando.telefone || ''} onChange={upd('telefone')} placeholder="(00) 00000-0000" />
+                  </div>
                 </div>
-                <div>
-                  <Label htmlFor="telefone">Telefone</Label>
-                  <Input
-                    id="telefone"
-                    value={editando.telefone || ''}
-                    onChange={e => setEditando(prev => prev ? { ...prev, telefone: e.target.value } : prev)}
-                  />
-                </div>
-                <div>
-                  <Label htmlFor="responsavel">Responsável</Label>
-                  <Input
-                    id="responsavel"
-                    value={editando.responsavel || ''}
-                    onChange={e => setEditando(prev => prev ? { ...prev, responsavel: e.target.value } : prev)}
-                  />
-                </div>
+
+                {/* ── Status (só na edição) ── */}
                 {editando.id && (
                   <div className="flex items-center gap-2">
                     <input
@@ -232,10 +318,9 @@ export default function ClientesPage() {
                     <Label htmlFor="ativo">Cliente ativo</Label>
                   </div>
                 )}
+
                 <div className="flex gap-2 justify-end pt-2">
-                  <Button type="button" variant="outline" onClick={() => setEditando(null)}>
-                    Cancelar
-                  </Button>
+                  <Button type="button" variant="outline" onClick={() => setEditando(null)}>Cancelar</Button>
                   <Button type="submit" disabled={submitting}>
                     {submitting ? 'Salvando...' : 'Salvar'}
                   </Button>

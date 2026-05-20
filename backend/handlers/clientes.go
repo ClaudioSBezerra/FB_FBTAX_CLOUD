@@ -16,6 +16,13 @@ type ClienteRequest struct {
 	Telefone    string `json:"telefone,omitempty"`
 	Responsavel string `json:"responsavel,omitempty"`
 	Ativo       bool   `json:"ativo"`
+	CEP         string `json:"cep,omitempty"`
+	Logradouro  string `json:"logradouro,omitempty"`
+	Numero      string `json:"numero,omitempty"`
+	Complemento string `json:"complemento,omitempty"`
+	Bairro      string `json:"bairro,omitempty"`
+	Municipio   string `json:"municipio,omitempty"`
+	UF          string `json:"uf,omitempty"`
 }
 
 type ClienteCNPJResponse struct {
@@ -35,6 +42,13 @@ type ClienteResponse struct {
 	Responsavel string                `json:"responsavel,omitempty"`
 	Ativo       bool                  `json:"ativo"`
 	CreatedAt   string                `json:"created_at"`
+	CEP         string                `json:"cep,omitempty"`
+	Logradouro  string                `json:"logradouro,omitempty"`
+	Numero      string                `json:"numero,omitempty"`
+	Complemento string                `json:"complemento,omitempty"`
+	Bairro      string                `json:"bairro,omitempty"`
+	Municipio   string                `json:"municipio,omitempty"`
+	UF          string                `json:"uf,omitempty"`
 	Cnpjs       []ClienteCNPJResponse `json:"cnpjs,omitempty"`
 }
 
@@ -76,11 +90,14 @@ func handleListClientes(w http.ResponseWriter, r *http.Request, db *sql.DB) {
 	status := r.URL.Query().Get("status")
 
 	query := `SELECT DISTINCT c.id, c.razao_social, c.cnpj,
-	           COALESCE(c.email,''), COALESCE(c.telefone,''), COALESCE(c.responsavel,''),
-	           c.ativo, c.created_at
-	    FROM financeiro.clientes c
-	    LEFT JOIN financeiro.cliente_cnpjs cc ON cc.cliente_id = c.id
-	    WHERE 1=1`
+		COALESCE(c.email,''), COALESCE(c.telefone,''), COALESCE(c.responsavel,''),
+		c.ativo, c.created_at,
+		COALESCE(c.cep,''), COALESCE(c.logradouro,''), COALESCE(c.numero,''),
+		COALESCE(c.complemento,''), COALESCE(c.bairro,''), COALESCE(c.municipio,''),
+		COALESCE(c.uf,'')
+	FROM financeiro.clientes c
+	LEFT JOIN financeiro.cliente_cnpjs cc ON cc.cliente_id = c.id
+	WHERE 1=1`
 	args := []interface{}{}
 	argN := 1
 
@@ -110,7 +127,11 @@ func handleListClientes(w http.ResponseWriter, r *http.Request, db *sql.DB) {
 	clientes := []ClienteResponse{}
 	for rows.Next() {
 		var c ClienteResponse
-		if err := rows.Scan(&c.ID, &c.RazaoSocial, &c.CNPJ, &c.Email, &c.Telefone, &c.Responsavel, &c.Ativo, &c.CreatedAt); err != nil {
+		if err := rows.Scan(
+			&c.ID, &c.RazaoSocial, &c.CNPJ, &c.Email, &c.Telefone, &c.Responsavel,
+			&c.Ativo, &c.CreatedAt,
+			&c.CEP, &c.Logradouro, &c.Numero, &c.Complemento, &c.Bairro, &c.Municipio, &c.UF,
+		); err != nil {
 			http.Error(w, "internal server error", http.StatusInternalServerError)
 			return
 		}
@@ -126,11 +147,15 @@ func handleListClientes(w http.ResponseWriter, r *http.Request, db *sql.DB) {
 func handleGetCliente(w http.ResponseWriter, r *http.Request, db *sql.DB) {
 	id := r.URL.Query().Get("id")
 	var c ClienteResponse
-	var email, telefone, responsavel sql.NullString
+	var email, telefone, responsavel, cep, logradouro, numero, complemento, bairro, municipio, uf sql.NullString
 	err := db.QueryRow(`
-		SELECT id, razao_social, cnpj, email, telefone, responsavel, ativo, created_at
+		SELECT id, razao_social, cnpj, email, telefone, responsavel, ativo, created_at,
+		       cep, logradouro, numero, complemento, bairro, municipio, uf
 		FROM financeiro.clientes WHERE id = $1
-	`, id).Scan(&c.ID, &c.RazaoSocial, &c.CNPJ, &email, &telefone, &responsavel, &c.Ativo, &c.CreatedAt)
+	`, id).Scan(
+		&c.ID, &c.RazaoSocial, &c.CNPJ, &email, &telefone, &responsavel, &c.Ativo, &c.CreatedAt,
+		&cep, &logradouro, &numero, &complemento, &bairro, &municipio, &uf,
+	)
 	if err == sql.ErrNoRows {
 		w.WriteHeader(http.StatusNotFound)
 		json.NewEncoder(w).Encode(map[string]string{"error": "cliente not found"})
@@ -143,6 +168,13 @@ func handleGetCliente(w http.ResponseWriter, r *http.Request, db *sql.DB) {
 	c.Email = email.String
 	c.Telefone = telefone.String
 	c.Responsavel = responsavel.String
+	c.CEP = cep.String
+	c.Logradouro = logradouro.String
+	c.Numero = numero.String
+	c.Complemento = complemento.String
+	c.Bairro = bairro.String
+	c.Municipio = municipio.String
+	c.UF = uf.String
 
 	rows, err := db.Query(`
 		SELECT id, cliente_id, cnpj, COALESCE(descricao,''), is_principal
@@ -185,9 +217,13 @@ func handlePostCliente(w http.ResponseWriter, r *http.Request, db *sql.DB) {
 
 	var id string
 	err = tx.QueryRow(`
-		INSERT INTO financeiro.clientes (razao_social, cnpj, email, telefone, responsavel, ativo)
-		VALUES ($1, $2, $3, $4, $5, $6) RETURNING id
-	`, req.RazaoSocial, req.CNPJ, req.Email, req.Telefone, req.Responsavel, req.Ativo).Scan(&id)
+		INSERT INTO financeiro.clientes
+		(razao_social, cnpj, email, telefone, responsavel, ativo,
+		 cep, logradouro, numero, complemento, bairro, municipio, uf)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) RETURNING id
+	`, req.RazaoSocial, req.CNPJ, req.Email, req.Telefone, req.Responsavel, req.Ativo,
+		req.CEP, req.Logradouro, req.Numero, req.Complemento, req.Bairro, req.Municipio, req.UF,
+	).Scan(&id)
 	if err != nil {
 		http.Error(w, "error creating cliente", http.StatusInternalServerError)
 		return
@@ -224,9 +260,14 @@ func handlePutCliente(w http.ResponseWriter, r *http.Request, db *sql.DB) {
 	}
 	_, err := db.Exec(`
 		UPDATE financeiro.clientes
-		SET razao_social=$1, email=$2, telefone=$3, responsavel=$4, ativo=$5, updated_at=CURRENT_TIMESTAMP
-		WHERE id=$6
-	`, req.RazaoSocial, req.Email, req.Telefone, req.Responsavel, req.Ativo, req.ID)
+		SET razao_social=$1, email=$2, telefone=$3, responsavel=$4, ativo=$5,
+		    cep=$6, logradouro=$7, numero=$8, complemento=$9, bairro=$10, municipio=$11, uf=$12,
+		    updated_at=CURRENT_TIMESTAMP
+		WHERE id=$13
+	`, req.RazaoSocial, req.Email, req.Telefone, req.Responsavel, req.Ativo,
+		req.CEP, req.Logradouro, req.Numero, req.Complemento, req.Bairro, req.Municipio, req.UF,
+		req.ID,
+	)
 	if err != nil {
 		http.Error(w, "error updating cliente", http.StatusInternalServerError)
 		return
