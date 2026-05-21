@@ -8,7 +8,7 @@ import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts'
-import { TrendingUp, TrendingDown, Wallet, Building2, Plus, ExternalLink, Info, Bot, Send, Loader2, ChevronDown, ChevronUp } from 'lucide-react'
+import { TrendingUp, TrendingDown, Wallet, Building2, Plus, ExternalLink, Info, Bot, Send, Loader2, ChevronDown, ChevronUp, RefreshCw, CheckCircle2, XCircle, Clock } from 'lucide-react'
 import { toast } from 'sonner'
 
 interface PainelData {
@@ -266,6 +266,25 @@ function SummaryCard({ title, value, icon: Icon, variant }: {
   )
 }
 
+interface InterStatus {
+  configurado: boolean
+  conta?: {
+    id: string
+    apelido: string
+    banco: string
+    saldo: number
+    ultima_sync?: string
+  }
+  ultimo_sync?: {
+    status: string
+    iniciado_em: string
+    tx_importadas: number
+    tx_duplicadas: number
+    saldo_final?: number
+    erro_detalhe?: string
+  }
+}
+
 const TIPOS_CONTA = ['corrente', 'poupança', 'pagamento', 'investimento']
 const CATEGORIAS = ['Receita', 'Folha de pagamento', 'Fornecedores', 'Impostos', 'Serviços', 'Transferência', 'Outros']
 
@@ -274,6 +293,9 @@ export default function PainelFinanceiroPage() {
   const [contas, setContas] = useState<Conta[]>([])
   const [transacoes, setTransacoes] = useState<Transacao[]>([])
   const [error, setError] = useState<string | null>(null)
+
+  const [interStatus, setInterStatus] = useState<InterStatus | null>(null)
+  const [syncingInter, setSyncingInter] = useState(false)
 
   const [modalConta, setModalConta] = useState(false)
   const [modalTx, setModalTx] = useState(false)
@@ -286,11 +308,27 @@ export default function PainelFinanceiroPage() {
       fetch('/api/financeiro/painel').then(r => r.json()),
       fetch('/api/financeiro/contas-financeiras').then(r => r.json()),
       fetch('/api/financeiro/transacoes?limit=30').then(r => r.json()),
-    ]).then(([p, c, t]) => {
+      fetch('/api/financeiro/inter/status').then(r => r.json()),
+    ]).then(([p, c, t, inter]) => {
       setPainel(p)
       setContas(c ?? [])
       setTransacoes(t ?? [])
+      setInterStatus(inter)
     }).catch(() => setError('Erro ao carregar dados financeiros'))
+  }
+
+  const handleInterSync = async () => {
+    setSyncingInter(true)
+    try {
+      const res = await fetch('/api/financeiro/inter/sync', { method: 'POST' })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.erro || 'Erro ao iniciar sync')
+      toast.success('Sincronização Inter iniciada — aguarde alguns segundos e recarregue.')
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Erro desconhecido')
+    } finally {
+      setSyncingInter(false)
+    }
   }
 
   useEffect(() => { loadAll() }, [])
@@ -489,6 +527,114 @@ export default function PainelFinanceiroPage() {
             </CardContent>
           </Card>
         </div>
+
+        {/* ── Banco Inter — integração direta ── */}
+        <Card className="border-orange-100 bg-orange-50/30">
+          <CardHeader className="pb-3">
+            <CardTitle className="text-sm font-semibold flex items-center gap-2">
+              <svg viewBox="0 0 32 32" className="w-5 h-5 fill-orange-500" aria-hidden="true">
+                <circle cx="16" cy="16" r="16" className="fill-orange-500" />
+                <path d="M8 16.5h16M16 8v16" stroke="white" strokeWidth="3" strokeLinecap="round" />
+              </svg>
+              Banco Inter — API Direta (PJ)
+              {interStatus?.configurado ? (
+                <Badge className="ml-auto bg-emerald-100 text-emerald-700 border-emerald-300">Configurado</Badge>
+              ) : (
+                <Badge variant="outline" className="ml-auto text-amber-700 border-amber-300 bg-amber-50">Pendente configuração</Badge>
+              )}
+            </CardTitle>
+            <CardDescription className="text-xs">
+              Extrato e saldo via OAuth2 + mTLS direto na API do Banco Inter — sem intermediários.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {interStatus?.configurado && interStatus.conta ? (
+              <div className="space-y-3">
+                {/* Info da conta */}
+                <div className="bg-white rounded-lg border p-3 flex items-center justify-between">
+                  <div>
+                    <p className="text-sm font-medium">{interStatus.conta.apelido}</p>
+                    <p className="text-xs text-muted-foreground">{interStatus.conta.banco}</p>
+                    {interStatus.conta.ultima_sync && (
+                      <p className="text-xs text-muted-foreground flex items-center gap-1 mt-0.5">
+                        <Clock className="w-3 h-3" />
+                        Última sync: {new Date(interStatus.conta.ultima_sync).toLocaleString('pt-BR')}
+                      </p>
+                    )}
+                  </div>
+                  <div className="text-right">
+                    <p className="text-lg font-bold text-emerald-600">{fmt(interStatus.conta.saldo)}</p>
+                    <p className="text-xs text-muted-foreground">Saldo disponível</p>
+                  </div>
+                </div>
+
+                {/* Último sync */}
+                {interStatus.ultimo_sync && (
+                  <div className="bg-white rounded-lg border p-3 flex items-center gap-3">
+                    {interStatus.ultimo_sync.status === 'ok' ? (
+                      <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0" />
+                    ) : interStatus.ultimo_sync.status === 'erro' ? (
+                      <XCircle className="w-4 h-4 text-red-500 shrink-0" />
+                    ) : (
+                      <Loader2 className="w-4 h-4 text-amber-500 animate-spin shrink-0" />
+                    )}
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs font-medium capitalize">{interStatus.ultimo_sync.status}</p>
+                      <p className="text-xs text-muted-foreground">
+                        {interStatus.ultimo_sync.tx_importadas} importadas · {interStatus.ultimo_sync.tx_duplicadas} duplicadas
+                        {interStatus.ultimo_sync.saldo_final !== undefined && (
+                          <> · Saldo: {fmt(interStatus.ultimo_sync.saldo_final)}</>
+                        )}
+                      </p>
+                      {interStatus.ultimo_sync.erro_detalhe && (
+                        <p className="text-xs text-red-600 truncate mt-0.5">{interStatus.ultimo_sync.erro_detalhe}</p>
+                      )}
+                    </div>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="shrink-0"
+                      onClick={handleInterSync}
+                      disabled={syncingInter}
+                    >
+                      {syncingInter ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
+                      <span className="ml-1.5 text-xs">Sincronizar</span>
+                    </Button>
+                  </div>
+                )}
+
+                {!interStatus.ultimo_sync && (
+                  <Button size="sm" onClick={handleInterSync} disabled={syncingInter} className="bg-orange-500 hover:bg-orange-600">
+                    {syncingInter ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <RefreshCw className="w-4 h-4 mr-2" />}
+                    Sincronizar agora
+                  </Button>
+                )}
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="bg-white rounded-lg border p-4 space-y-2">
+                  <p className="text-sm font-medium">Variáveis de ambiente necessárias</p>
+                  <div className="space-y-1">
+                    {['INTER_CLIENT_ID', 'INTER_CLIENT_SECRET', 'INTER_CERT_PEM', 'INTER_KEY_PEM', 'INTER_CONTA_CORRENTE'].map(v => (
+                      <code key={v} className="block text-xs bg-slate-100 px-2 py-1 rounded font-mono text-slate-700">{v}</code>
+                    ))}
+                  </div>
+                  <p className="text-xs text-muted-foreground">Configure no Coolify em Environment Variables.</p>
+                </div>
+                <div className="bg-white rounded-lg border p-4 space-y-2">
+                  <p className="text-sm font-medium">Como obter as credenciais</p>
+                  <ol className="text-xs text-muted-foreground space-y-1 list-decimal list-inside">
+                    <li>Acesse <a href="https://developers.inter.co" target="_blank" rel="noopener noreferrer" className="text-orange-600 hover:underline inline-flex items-center gap-0.5">developers.inter.co <ExternalLink className="w-2.5 h-2.5" /></a></li>
+                    <li>Crie um app com escopo <code className="bg-slate-100 px-1 rounded">extrato.read saldo.read</code></li>
+                    <li>Baixe o certificado mTLS (.crt e .key)</li>
+                    <li>Converta para base64 e salve nas variáveis acima</li>
+                    <li>Cadastre uma Conta Financeira com <code className="bg-slate-100 px-1 rounded">provedor = inter</code></li>
+                  </ol>
+                </div>
+              </div>
+            )}
+          </CardContent>
+        </Card>
 
         {/* ── Chat IA ── */}
         <ChatIA />

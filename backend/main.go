@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"fb_cloud/handlers"
+	"fb_cloud/services"
 
 	"github.com/joho/godotenv"
 	_ "github.com/lib/pq"
@@ -256,6 +257,7 @@ func onDBConnected() {
 	}
 
 	handlers.StartTokenStatusUpdater(database)
+	services.StartInterDailySync(database)
 }
 
 func main() {
@@ -370,6 +372,8 @@ func main() {
 	http.HandleFunc("/api/financeiro/contas-financeiras", withAuth(handlers.ContasFinanceirasHandler, "admin"))
 	http.HandleFunc("/api/financeiro/transacoes",         withAuth(handlers.TransacoesHandler, "admin"))
 	http.HandleFunc("/api/financeiro/chat",               withAuth(handlers.ChatFinanceiroHandler, "admin"))
+	http.HandleFunc("/api/financeiro/inter/status",       withAuth(handlers.InterStatusHandler, "admin"))
+	http.HandleFunc("/api/financeiro/inter/sync",         withAuth(handlers.InterSyncHandler, "admin"))
 
 	// ── Financeiro — portal cliente (JWT role=portal_cliente) ────────────────
 	http.HandleFunc("/api/financeiro/portal/login",     withDB(handlers.PortalLoginHandler))
