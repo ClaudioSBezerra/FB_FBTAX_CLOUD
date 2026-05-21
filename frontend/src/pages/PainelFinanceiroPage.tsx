@@ -8,7 +8,7 @@ import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts'
-import { TrendingUp, TrendingDown, Wallet, Building2, Plus, ExternalLink, Info, Bot, Send, Loader2, ChevronDown, ChevronUp, RefreshCw, CheckCircle2, XCircle, Clock } from 'lucide-react'
+import { TrendingUp, TrendingDown, Wallet, Building2, Plus, ExternalLink, Info, Bot, Send, Loader2, ChevronDown, ChevronUp, RefreshCw, CheckCircle2, XCircle, Clock, Settings2 } from 'lucide-react'
 import { toast } from 'sonner'
 
 interface PainelData {
@@ -266,23 +266,35 @@ function SummaryCard({ title, value, icon: Icon, variant }: {
   )
 }
 
-interface InterStatus {
+interface ProviderConfig {
+  client_id: string
+  client_secret: string
+  cert_pem?: string
+  key_pem?: string
+  conta_corrente?: string  // Inter
+  agencia?: string         // Itaú
+  conta?: string           // Itaú
+  base_url?: string
+}
+
+interface SyncLog {
+  status: string
+  iniciado_em: string
+  tx_importadas: number
+  tx_duplicadas: number
+  saldo_final?: number
+  erro_detalhe?: string
+}
+
+interface BancoStatus {
+  id: string
+  apelido: string
+  banco: string
+  provedor: string
+  saldo: number
+  ultima_sync?: string
   configurado: boolean
-  conta?: {
-    id: string
-    apelido: string
-    banco: string
-    saldo: number
-    ultima_sync?: string
-  }
-  ultimo_sync?: {
-    status: string
-    iniciado_em: string
-    tx_importadas: number
-    tx_duplicadas: number
-    saldo_final?: number
-    erro_detalhe?: string
-  }
+  ultimo_sync?: SyncLog
 }
 
 const TIPOS_CONTA = ['corrente', 'poupança', 'pagamento', 'investimento']
@@ -294,8 +306,14 @@ export default function PainelFinanceiroPage() {
   const [transacoes, setTransacoes] = useState<Transacao[]>([])
   const [error, setError] = useState<string | null>(null)
 
-  const [interStatus, setInterStatus] = useState<InterStatus | null>(null)
-  const [syncingInter, setSyncingInter] = useState(false)
+  const [bancos, setBancos] = useState<BancoStatus[]>([])
+  const [providers, setProviders] = useState<string[]>([])
+  const [syncingConta, setSyncingConta] = useState<string | null>(null)
+  const [modalConfig, setModalConfig] = useState<BancoStatus | null>(null)
+  const [config, setConfig] = useState<ProviderConfig & { provedor: string }>({
+    provedor: '', client_id: '', client_secret: '', cert_pem: '', key_pem: '',
+    conta_corrente: '', agencia: '', conta: '', base_url: '',
+  })
 
   const [modalConta, setModalConta] = useState(false)
   const [modalTx, setModalTx] = useState(false)
@@ -308,27 +326,62 @@ export default function PainelFinanceiroPage() {
       fetch('/api/financeiro/painel').then(r => r.json()),
       fetch('/api/financeiro/contas-financeiras').then(r => r.json()),
       fetch('/api/financeiro/transacoes?limit=30').then(r => r.json()),
-      fetch('/api/financeiro/inter/status').then(r => r.json()),
-    ]).then(([p, c, t, inter]) => {
+      fetch('/api/financeiro/bancos/status').then(r => r.json()),
+      fetch('/api/financeiro/bancos/providers').then(r => r.json()),
+    ]).then(([p, c, t, b, prov]) => {
       setPainel(p)
       setContas(c ?? [])
       setTransacoes(t ?? [])
-      setInterStatus(inter)
+      setBancos(b ?? [])
+      setProviders(prov ?? [])
     }).catch(() => setError('Erro ao carregar dados financeiros'))
   }
 
-  const handleInterSync = async () => {
-    setSyncingInter(true)
+  const handleSync = async (contaId: string) => {
+    setSyncingConta(contaId)
     try {
-      const res = await fetch('/api/financeiro/inter/sync', { method: 'POST' })
+      const res = await fetch('/api/financeiro/bancos/sync', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ conta_id: contaId }),
+      })
       const data = await res.json()
       if (!res.ok) throw new Error(data.erro || 'Erro ao iniciar sync')
-      toast.success('Sincronização Inter iniciada — aguarde alguns segundos e recarregue.')
+      toast.success('Sincronização iniciada — atualize em alguns segundos.')
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Erro desconhecido')
     } finally {
-      setSyncingInter(false)
+      setSyncingConta(null)
     }
+  }
+
+  const handleSaveConfig = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!modalConfig) return
+    const { provedor, ...cfg } = config
+    try {
+      const res = await fetch('/api/financeiro/bancos/config', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ conta_id: modalConfig.id, provedor, config: cfg }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.erro || 'Erro ao salvar')
+      toast.success('Configuração salva com sucesso')
+      setModalConfig(null)
+      loadAll()
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Erro desconhecido')
+    }
+  }
+
+  const abrirConfig = (banco: BancoStatus) => {
+    setConfig({
+      provedor: banco.provedor || '',
+      client_id: '', client_secret: '', cert_pem: '', key_pem: '',
+      conta_corrente: '', agencia: '', conta: '', base_url: '',
+    })
+    setModalConfig(banco)
   }
 
   useEffect(() => { loadAll() }, [])
@@ -528,108 +581,138 @@ export default function PainelFinanceiroPage() {
           </Card>
         </div>
 
-        {/* ── Banco Inter — integração direta ── */}
-        <Card className="border-orange-100 bg-orange-50/30">
+        {/* ── Bancos Conectados — multi-banco ── */}
+        <Card className="border-slate-200">
           <CardHeader className="pb-3">
             <CardTitle className="text-sm font-semibold flex items-center gap-2">
-              <svg viewBox="0 0 32 32" className="w-5 h-5 fill-orange-500" aria-hidden="true">
-                <circle cx="16" cy="16" r="16" className="fill-orange-500" />
-                <path d="M8 16.5h16M16 8v16" stroke="white" strokeWidth="3" strokeLinecap="round" />
-              </svg>
-              Banco Inter — API Direta (PJ)
-              {interStatus?.configurado ? (
-                <Badge className="ml-auto bg-emerald-100 text-emerald-700 border-emerald-300">Configurado</Badge>
-              ) : (
-                <Badge variant="outline" className="ml-auto text-amber-700 border-amber-300 bg-amber-50">Pendente configuração</Badge>
-              )}
+              <Building2 className="w-4 h-4 text-slate-600" />
+              Bancos Conectados — API Direta
+              <Badge variant="outline" className="ml-auto text-xs">
+                {bancos.filter(b => b.configurado).length}/{bancos.length} configurado(s)
+              </Badge>
             </CardTitle>
             <CardDescription className="text-xs">
-              Extrato e saldo via OAuth2 + mTLS direto na API do Banco Inter — sem intermediários.
+              Extrato e saldo via OAuth2 + mTLS direto nos bancos — sem intermediários. Suporta: {providers.join(', ') || 'Inter, Itaú'}.
             </CardDescription>
           </CardHeader>
-          <CardContent className="space-y-4">
-            {interStatus?.configurado && interStatus.conta ? (
-              <div className="space-y-3">
-                {/* Info da conta */}
-                <div className="bg-white rounded-lg border p-3 flex items-center justify-between">
-                  <div>
-                    <p className="text-sm font-medium">{interStatus.conta.apelido}</p>
-                    <p className="text-xs text-muted-foreground">{interStatus.conta.banco}</p>
-                    {interStatus.conta.ultima_sync && (
-                      <p className="text-xs text-muted-foreground flex items-center gap-1 mt-0.5">
-                        <Clock className="w-3 h-3" />
-                        Última sync: {new Date(interStatus.conta.ultima_sync).toLocaleString('pt-BR')}
-                      </p>
-                    )}
-                  </div>
-                  <div className="text-right">
-                    <p className="text-lg font-bold text-emerald-600">{fmt(interStatus.conta.saldo)}</p>
-                    <p className="text-xs text-muted-foreground">Saldo disponível</p>
-                  </div>
-                </div>
-
-                {/* Último sync */}
-                {interStatus.ultimo_sync && (
-                  <div className="bg-white rounded-lg border p-3 flex items-center gap-3">
-                    {interStatus.ultimo_sync.status === 'ok' ? (
-                      <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0" />
-                    ) : interStatus.ultimo_sync.status === 'erro' ? (
-                      <XCircle className="w-4 h-4 text-red-500 shrink-0" />
-                    ) : (
-                      <Loader2 className="w-4 h-4 text-amber-500 animate-spin shrink-0" />
-                    )}
-                    <div className="flex-1 min-w-0">
-                      <p className="text-xs font-medium capitalize">{interStatus.ultimo_sync.status}</p>
-                      <p className="text-xs text-muted-foreground">
-                        {interStatus.ultimo_sync.tx_importadas} importadas · {interStatus.ultimo_sync.tx_duplicadas} duplicadas
-                        {interStatus.ultimo_sync.saldo_final !== undefined && (
-                          <> · Saldo: {fmt(interStatus.ultimo_sync.saldo_final)}</>
-                        )}
-                      </p>
-                      {interStatus.ultimo_sync.erro_detalhe && (
-                        <p className="text-xs text-red-600 truncate mt-0.5">{interStatus.ultimo_sync.erro_detalhe}</p>
-                      )}
-                    </div>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      className="shrink-0"
-                      onClick={handleInterSync}
-                      disabled={syncingInter}
-                    >
-                      {syncingInter ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
-                      <span className="ml-1.5 text-xs">Sincronizar</span>
-                    </Button>
-                  </div>
-                )}
-
-                {!interStatus.ultimo_sync && (
-                  <Button size="sm" onClick={handleInterSync} disabled={syncingInter} className="bg-orange-500 hover:bg-orange-600">
-                    {syncingInter ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <RefreshCw className="w-4 h-4 mr-2" />}
-                    Sincronizar agora
-                  </Button>
-                )}
+          <CardContent className="space-y-3">
+            {bancos.length === 0 ? (
+              <div className="text-center py-6 space-y-2">
+                <p className="text-sm text-muted-foreground">Nenhuma conta bancária cadastrada ainda.</p>
+                <Button variant="outline" size="sm" onClick={() => setModalConta(true)}>
+                  <Plus className="w-3.5 h-3.5 mr-1.5" /> Cadastrar conta
+                </Button>
               </div>
             ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="bg-white rounded-lg border p-4 space-y-2">
-                  <p className="text-sm font-medium">Variáveis de ambiente necessárias</p>
-                  <div className="space-y-1">
-                    {['INTER_CLIENT_ID', 'INTER_CLIENT_SECRET', 'INTER_CERT_PEM', 'INTER_KEY_PEM', 'INTER_CONTA_CORRENTE'].map(v => (
-                      <code key={v} className="block text-xs bg-slate-100 px-2 py-1 rounded font-mono text-slate-700">{v}</code>
-                    ))}
+              <div className="space-y-2">
+                {bancos.map(banco => (
+                  <div key={banco.id} className="bg-slate-50 rounded-lg border p-3">
+                    <div className="flex items-start gap-3">
+                      {/* Ícone do banco */}
+                      <div className={`w-8 h-8 rounded-lg flex items-center justify-center text-xs font-bold shrink-0 ${
+                        banco.provedor === 'inter' ? 'bg-orange-100 text-orange-600' :
+                        banco.provedor === 'itau'  ? 'bg-amber-100 text-amber-700' :
+                        'bg-slate-200 text-slate-600'
+                      }`}>
+                        {banco.provedor ? banco.provedor.slice(0,2).toUpperCase() : '??'}
+                      </div>
+
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <p className="text-sm font-medium">{banco.apelido}</p>
+                          <span className="text-xs text-muted-foreground">{banco.banco}</span>
+                          {banco.provedor && (
+                            <Badge variant="outline" className="text-[10px] capitalize">{banco.provedor}</Badge>
+                          )}
+                          {banco.configurado ? (
+                            <Badge className="text-[10px] bg-emerald-50 text-emerald-700 border-emerald-200">API ok</Badge>
+                          ) : banco.provedor ? (
+                            <Badge variant="outline" className="text-[10px] text-amber-700 border-amber-300 bg-amber-50">Sem credenciais</Badge>
+                          ) : null}
+                        </div>
+
+                        <div className="flex items-center gap-3 mt-1">
+                          <p className={`text-sm font-semibold ${banco.saldo >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
+                            {fmt(banco.saldo)}
+                          </p>
+                          {banco.ultima_sync && (
+                            <p className="text-[11px] text-muted-foreground flex items-center gap-1">
+                              <Clock className="w-3 h-3" />
+                              {new Date(banco.ultima_sync).toLocaleString('pt-BR', { day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit' })}
+                            </p>
+                          )}
+                        </div>
+
+                        {/* Último log de sync */}
+                        {banco.ultimo_sync && (
+                          <div className="flex items-center gap-1.5 mt-1.5">
+                            {banco.ultimo_sync.status === 'ok' ? (
+                              <CheckCircle2 className="w-3 h-3 text-emerald-500 shrink-0" />
+                            ) : banco.ultimo_sync.status === 'erro' ? (
+                              <XCircle className="w-3 h-3 text-red-500 shrink-0" />
+                            ) : (
+                              <Loader2 className="w-3 h-3 text-amber-500 animate-spin shrink-0" />
+                            )}
+                            <p className="text-[11px] text-muted-foreground">
+                              {banco.ultimo_sync.tx_importadas} importadas · {banco.ultimo_sync.tx_duplicadas} duplicadas
+                            </p>
+                            {banco.ultimo_sync.erro_detalhe && (
+                              <p className="text-[11px] text-red-600 truncate max-w-xs">{banco.ultimo_sync.erro_detalhe}</p>
+                            )}
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Ações */}
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="h-7 px-2 text-xs"
+                          onClick={() => abrirConfig(banco)}
+                          title="Configurar API"
+                        >
+                          <Settings2 className="w-3.5 h-3.5" />
+                        </Button>
+                        {banco.configurado && (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="h-7 px-2 text-xs"
+                            onClick={() => handleSync(banco.id)}
+                            disabled={syncingConta === banco.id}
+                            title="Sincronizar"
+                          >
+                            {syncingConta === banco.id
+                              ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                              : <RefreshCw className="w-3.5 h-3.5" />
+                            }
+                          </Button>
+                        )}
+                      </div>
+                    </div>
                   </div>
-                  <p className="text-xs text-muted-foreground">Configure no Coolify em Environment Variables.</p>
-                </div>
-                <div className="bg-white rounded-lg border p-4 space-y-2">
-                  <p className="text-sm font-medium">Como obter as credenciais</p>
-                  <ol className="text-xs text-muted-foreground space-y-1 list-decimal list-inside">
-                    <li>Acesse <a href="https://developers.inter.co" target="_blank" rel="noopener noreferrer" className="text-orange-600 hover:underline inline-flex items-center gap-0.5">developers.inter.co <ExternalLink className="w-2.5 h-2.5" /></a></li>
-                    <li>Crie um app com escopo <code className="bg-slate-100 px-1 rounded">extrato.read saldo.read</code></li>
-                    <li>Baixe o certificado mTLS (.crt e .key)</li>
-                    <li>Converta para base64 e salve nas variáveis acima</li>
-                    <li>Cadastre uma Conta Financeira com <code className="bg-slate-100 px-1 rounded">provedor = inter</code></li>
-                  </ol>
+                ))}
+              </div>
+            )}
+
+            {/* Nota sobre credenciais */}
+            {bancos.some(b => !b.configurado && b.provedor) && (
+              <div className="rounded-lg border border-dashed border-amber-200 bg-amber-50/50 p-3">
+                <p className="text-xs text-amber-800 font-medium mb-1">Contas sem credenciais configuradas</p>
+                <p className="text-xs text-muted-foreground">
+                  Clique em <Settings2 className="w-3 h-3 inline" /> ao lado da conta para inserir client_id, client_secret e certificado mTLS.
+                  As credenciais são criptografadas com AES-256-GCM antes de salvar.
+                </p>
+                <div className="mt-2 flex flex-wrap gap-2">
+                  <a href="https://developers.inter.co" target="_blank" rel="noopener noreferrer"
+                    className="text-xs text-orange-600 hover:underline flex items-center gap-0.5">
+                    Inter: developers.inter.co <ExternalLink className="w-2.5 h-2.5" />
+                  </a>
+                  <a href="https://devportal.itau.com.br" target="_blank" rel="noopener noreferrer"
+                    className="text-xs text-amber-700 hover:underline flex items-center gap-0.5">
+                    Itaú: devportal.itau.com.br <ExternalLink className="w-2.5 h-2.5" />
+                  </a>
                 </div>
               </div>
             )}
@@ -800,6 +883,100 @@ export default function PainelFinanceiroPage() {
             <div className="flex gap-2 justify-end pt-2">
               <Button type="button" variant="outline" onClick={() => setModalTx(false)}>Cancelar</Button>
               <Button type="submit" disabled={submitting}>{submitting ? 'Salvando...' : 'Salvar'}</Button>
+            </div>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── Modal: Configurar API do Banco ── */}
+      <Dialog open={!!modalConfig} onOpenChange={v => !v && setModalConfig(null)}>
+        <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Configurar API — {modalConfig?.apelido}</DialogTitle>
+          </DialogHeader>
+          <form onSubmit={handleSaveConfig} className="space-y-4">
+            <div>
+              <Label>Provedor (banco) *</Label>
+              <select
+                className="w-full border border-input bg-background rounded-md px-3 py-2 text-sm mt-1"
+                value={config.provedor}
+                onChange={e => setConfig(p => ({ ...p, provedor: e.target.value }))}
+                required
+              >
+                <option value="">Selecione o banco...</option>
+                {providers.map(p => (
+                  <option key={p} value={p} className="capitalize">{p.charAt(0).toUpperCase() + p.slice(1)}</option>
+                ))}
+              </select>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <Label>Client ID *</Label>
+                <Input value={config.client_id} onChange={e => setConfig(p => ({ ...p, client_id: e.target.value }))} required placeholder="Seu client_id" className="mt-1" />
+              </div>
+              <div>
+                <Label>Client Secret *</Label>
+                <Input type="password" value={config.client_secret} onChange={e => setConfig(p => ({ ...p, client_secret: e.target.value }))} required placeholder="••••••••" className="mt-1" />
+              </div>
+            </div>
+
+            {/* mTLS — Inter e Itaú */}
+            <div className="space-y-2">
+              <Label className="text-xs text-muted-foreground uppercase tracking-wide">Certificado mTLS (opcional)</Label>
+              <div>
+                <Label className="text-xs">Certificado (.crt) — base64 ou PEM</Label>
+                <textarea
+                  value={config.cert_pem}
+                  onChange={e => setConfig(p => ({ ...p, cert_pem: e.target.value }))}
+                  className="w-full border border-input bg-background rounded-md px-3 py-2 text-xs font-mono mt-1 h-20 resize-none"
+                  placeholder="-----BEGIN CERTIFICATE-----&#10;...&#10;-----END CERTIFICATE-----"
+                />
+              </div>
+              <div>
+                <Label className="text-xs">Chave privada (.key) — base64 ou PEM</Label>
+                <textarea
+                  value={config.key_pem}
+                  onChange={e => setConfig(p => ({ ...p, key_pem: e.target.value }))}
+                  className="w-full border border-input bg-background rounded-md px-3 py-2 text-xs font-mono mt-1 h-20 resize-none"
+                  placeholder="-----BEGIN EC PRIVATE KEY-----&#10;...&#10;-----END EC PRIVATE KEY-----"
+                />
+              </div>
+            </div>
+
+            {/* Campos específicos por provider */}
+            {config.provedor === 'inter' && (
+              <div>
+                <Label>Número da Conta Corrente (x-conta-corrente)</Label>
+                <Input value={config.conta_corrente} onChange={e => setConfig(p => ({ ...p, conta_corrente: e.target.value }))} placeholder="Ex: 12345678" className="mt-1" />
+              </div>
+            )}
+            {config.provedor === 'itau' && (
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <Label>Agência</Label>
+                  <Input value={config.agencia} onChange={e => setConfig(p => ({ ...p, agencia: e.target.value }))} placeholder="0001" className="mt-1" />
+                </div>
+                <div>
+                  <Label>Conta</Label>
+                  <Input value={config.conta} onChange={e => setConfig(p => ({ ...p, conta: e.target.value }))} placeholder="12345" className="mt-1" />
+                </div>
+              </div>
+            )}
+
+            <div>
+              <Label className="text-xs text-muted-foreground">Base URL (opcional — override do endpoint padrão)</Label>
+              <Input value={config.base_url} onChange={e => setConfig(p => ({ ...p, base_url: e.target.value }))} placeholder="Ex: https://sandbox.bancointer.com.br" className="mt-1 text-xs" />
+            </div>
+
+            <div className="rounded-lg bg-amber-50 border border-amber-200 p-3 text-xs text-amber-800">
+              As credenciais são criptografadas com AES-256-GCM antes de salvar no banco de dados.
+              Configure <code className="bg-amber-100 px-1 rounded font-mono">FINANCEIRO_SECRET</code> no Coolify para ativar a criptografia.
+            </div>
+
+            <div className="flex gap-2 justify-end pt-1">
+              <Button type="button" variant="outline" onClick={() => setModalConfig(null)}>Cancelar</Button>
+              <Button type="submit">Salvar configuração</Button>
             </div>
           </form>
         </DialogContent>
