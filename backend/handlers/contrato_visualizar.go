@@ -1,11 +1,18 @@
 package handlers
 
 import (
+	"bytes"
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"image"
+	"image/color"
+	"image/png"
 	"io"
+	"math"
 	"net/http"
+	"os"
+	"strconv"
 	"time"
 
 	"github.com/johnfercher/maroto/v2"
@@ -15,7 +22,9 @@ import (
 	"github.com/johnfercher/maroto/v2/pkg/components/text"
 	"github.com/johnfercher/maroto/v2/pkg/config"
 	"github.com/johnfercher/maroto/v2/pkg/consts/align"
+	"github.com/johnfercher/maroto/v2/pkg/consts/extension"
 	"github.com/johnfercher/maroto/v2/pkg/consts/fontstyle"
+	"github.com/johnfercher/maroto/v2/pkg/consts/linestyle"
 	"github.com/johnfercher/maroto/v2/pkg/core"
 	"github.com/johnfercher/maroto/v2/pkg/props"
 )
@@ -243,19 +252,89 @@ func formatarData(iso string) string {
 	return fmt.Sprintf("%d de %s de %d", t.Day(), meses[int(t.Month())], t.Year())
 }
 
+func formatarDataCurta(iso string) string {
+	t, err := time.Parse("2006-01-02", iso)
+	if err != nil {
+		return iso
+	}
+	return t.Format("02/01/2006")
+}
+
+func formatarMoeda(v float64) string {
+	cents := int64(math.Round(v * 100))
+	dec := cents % 100
+	inteiro := cents / 100
+	s := strconv.FormatInt(inteiro, 10)
+	result := make([]byte, 0, len(s)+5)
+	for i, c := range s {
+		if i > 0 && (len(s)-i)%3 == 0 {
+			result = append(result, '.')
+		}
+		result = append(result, byte(c))
+	}
+	return fmt.Sprintf("R$ %s,%02d", string(result), dec)
+}
+
+func logoMarcaDagua() []byte {
+	paths := []string{
+		"./static/logo-fb.png",
+		"./frontend/public/logo-fb.png",
+		"../frontend/public/logo-fb.png",
+	}
+	var raw []byte
+	for _, p := range paths {
+		b, err := os.ReadFile(p)
+		if err == nil {
+			raw = b
+			break
+		}
+	}
+	if raw == nil {
+		return nil
+	}
+	src, err := png.Decode(bytes.NewReader(raw))
+	if err != nil {
+		return raw
+	}
+	bounds := src.Bounds()
+	dst := image.NewRGBA(bounds)
+	for y := bounds.Min.Y; y < bounds.Max.Y; y++ {
+		for x := bounds.Min.X; x < bounds.Max.X; x++ {
+			r, g, b, a := src.At(x, y).RGBA()
+			// reduz alpha para ~12% — marca d'água discreta
+			dst.SetRGBA(x, y, color.RGBA{
+				R: uint8(r >> 8),
+				G: uint8(g >> 8),
+				B: uint8(b >> 8),
+				A: uint8((a >> 8) * 12 / 100),
+			})
+		}
+	}
+	var buf bytes.Buffer
+	if err := png.Encode(&buf, dst); err != nil {
+		return raw
+	}
+	return buf.Bytes()
+}
+
 func gerarContratoPDF(d *ContratoDetalhe) ([]byte, error) {
-	cfg := config.NewBuilder().
+	builder := config.NewBuilder().
 		WithLeftMargin(18).
 		WithRightMargin(18).
-		WithTopMargin(12).
-		Build()
+		WithTopMargin(12)
 
-	mrt := maroto.New(cfg)
+	if logoBytes := logoMarcaDagua(); logoBytes != nil {
+		builder = builder.WithBackgroundImage(logoBytes, extension.Png)
+	}
+
+	mrt := maroto.New(builder.Build())
 	add := func(rs ...core.Row) { mrt.AddRows(rs...) }
 
 	// ── helpers ────────────────────────────────────────────────────────────────
 	esp := func(h float64) core.Row { return row.New(h) }
-	sep := func() core.Row { return line.NewRow(2) }
+	sep := func() core.Row {
+		return line.NewRow(3, props.Line{Style: linestyle.Dashed, SizePercent: 100, Thickness: 0.3})
+	}
 
 	titulo := func(s string) core.Row {
 		return row.New(9).Add(col.New(12).Add(
@@ -329,8 +408,8 @@ func gerarContratoPDF(d *ContratoDetalhe) ([]byte, error) {
 			col.New(8).Add(text.New(nomeEmpresa, props.Text{Size: 14, Style: fontstyle.Bold, Align: align.Left})),
 			col.New(4).Add(text.New(fmt.Sprintf("Nº %s", d.Numero), props.Text{Size: 9, Align: align.Right, Style: fontstyle.Bold})),
 		),
-		row.New(5).Add(col.New(12).Add(
-			text.New("FBTax Cloud — Soluções Fiscais e Tributárias", props.Text{Size: 8, Align: align.Left}),
+		row.New(6).Add(col.New(12).Add(
+			text.New("FbTax Cloud - Soluções Inteligentes", props.Text{Size: 9.5, Align: align.Left}),
 		)),
 		esp(3),
 		sep(),
@@ -376,7 +455,7 @@ func gerarContratoPDF(d *ContratoDetalhe) ([]byte, error) {
 	add(
 		clausulaTitulo("CLÁUSULA 1ª – DO OBJETO"),
 		esp(2),
-		para("O presente Contrato tem por objeto a prestação de serviços de tecnologia pela CONTRATANTE à CONTRATADA, consistindo no acesso e utilização dos sistemas e plataformas digitais integrantes do ecossistema FBTax Cloud e Portal Fortes Bezerra, incluindo as soluções de gestão fiscal, tributária e financeira, nos termos e condições estabelecidos neste instrumento.", 22),
+		para(`O presente Contrato tem por objeto a prestação de serviços de tecnologia pela CONTRATANTE à CONTRATADA, consistindo no acesso e utilização dos sistemas e plataformas digitais integrantes do ecossistema da Fortes Bezerra Tecnologia, nos termos e condições estabelecidos neste instrumento.`, 18),
 		esp(5),
 	)
 
@@ -398,7 +477,7 @@ func gerarContratoPDF(d *ContratoDetalhe) ([]byte, error) {
 	for _, item := range d.Itens {
 		valorStr := "Sob consulta"
 		if item.ValorItem != nil {
-			valorStr = fmt.Sprintf("%.2f", *item.ValorItem)
+			valorStr = formatarMoeda(*item.ValorItem)
 		}
 		add(row.New(5.5).Add(
 			col.New(5).Add(text.New(item.Produto, props.Text{Size: 8.5})),
@@ -426,9 +505,9 @@ func gerarContratoPDF(d *ContratoDetalhe) ([]byte, error) {
 	add(
 		clausulaTitulo("CLÁUSULA 3ª – DO VALOR E DA FORMA DE PAGAMENTO"),
 		esp(2),
-		campo("Valor total:", fmt.Sprintf("R$ %.2f (%s)", d.ValorTotal, valorPorExtenso(d.ValorTotal))),
+		campo("Valor total:", fmt.Sprintf("%s (%s)", formatarMoeda(d.ValorTotal), valorPorExtenso(d.ValorTotal))),
 		campo("Periodicidade:", capitalizar(d.Periodicidade)),
-		campo("Vigência a partir de:", formatarData(d.DataInicio)),
+		campo("Vigência a partir de:", formatarDataCurta(d.DataInicio)),
 		esp(2),
 		para("3.1. O pagamento deverá ser realizado na data de vencimento acordada entre as PARTES, mediante boleto bancário, transferência bancária (TED/PIX) ou outra forma previamente convencionada.", 14),
 		esp(2),
@@ -450,7 +529,7 @@ func gerarContratoPDF(d *ContratoDetalhe) ([]byte, error) {
 	add(
 		clausulaTitulo("CLÁUSULA 5ª – DA VIGÊNCIA E DA RESCISÃO"),
 		esp(2),
-		para(fmt.Sprintf("5.1. O presente Contrato entra em vigor na data de sua assinatura, com início da prestação dos serviços em %s, e permanecerá em vigor por prazo indeterminado, renovando-se automaticamente a cada período de cobrança.", formatarData(d.DataInicio)), 16),
+		para(fmt.Sprintf("5.1. O presente Contrato entra em vigor na data de sua assinatura, com início da prestação dos serviços em %s, e permanecerá em vigor por prazo indeterminado, renovando-se automaticamente a cada período de cobrança.", formatarDataCurta(d.DataInicio)), 16),
 		esp(2),
 		para("5.2. Qualquer das PARTES poderá rescindir o presente Contrato mediante notificação prévia por escrito com antecedência mínima de 30 (trinta) dias, sem a incidência de multas rescisórias, desde que não haja débitos pendentes.", 16),
 		esp(2),
