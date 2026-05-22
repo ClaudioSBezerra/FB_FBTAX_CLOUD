@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -8,6 +8,8 @@ import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
+import { Separator } from '@/components/ui/separator'
+import { FileText, Download, Upload, CheckCircle2, Eye } from 'lucide-react'
 import { toast } from 'sonner'
 
 interface ClienteSimples {
@@ -61,6 +63,23 @@ interface EditandoContrato {
   observacoes: string
 }
 
+interface ContratoDetalhe {
+  id: string
+  numero: string
+  data_inicio: string
+  periodicidade: string
+  valor_total: number
+  status: string
+  observacoes: string
+  criado_em: string
+  assinado_em?: string
+  assinado_nome?: string
+  cliente: { razao_social: string; cnpj: string; email: string; fone: string; municipio: string; uf: string }
+  empresa: { razao_social: string; nome_fantasia: string; cnpj: string; logradouro: string; numero: string; municipio: string; uf: string }
+  cnpjs: { cnpj: string; descricao: string; principal: boolean }[]
+  itens: { produto: string; plano: string; valor_item?: number }[]
+}
+
 function formatMoeda(valor: number): string {
   return valor.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
 }
@@ -86,6 +105,12 @@ export default function ContratosPage() {
   // Edição
   const [editandoContrato, setEditandoContrato] = useState<EditandoContrato | null>(null)
   const [submittingEdit, setSubmittingEdit] = useState(false)
+
+  // Visualização e PDF
+  const [visualizando, setVisualizando] = useState<ContratoDetalhe | null>(null)
+  const [loadingDetalhe, setLoadingDetalhe] = useState(false)
+  const [uploadingId, setUploadingId] = useState<string | null>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
 
   // Formulário novo contrato
   const [etapa, setEtapa] = useState<1 | 2 | 3>(1)
@@ -248,6 +273,38 @@ export default function ContratosPage() {
     }
   }
 
+  const handleVisualizar = async (id: string) => {
+    setLoadingDetalhe(true)
+    try {
+      const res = await fetch(`/api/financeiro/contratos/detalhe?id=${id}`)
+      if (!res.ok) throw new Error('Erro ao carregar contrato')
+      setVisualizando(await res.json())
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Erro')
+    } finally {
+      setLoadingDetalhe(false)
+    }
+  }
+
+  const handleUploadAssinado = async (contratoId: string, file: File) => {
+    setUploadingId(contratoId)
+    try {
+      const form = new FormData()
+      form.append('contrato_id', contratoId)
+      form.append('arquivo', file)
+      const res = await fetch('/api/financeiro/contratos/upload-assinado', { method: 'POST', body: form })
+      if (!res.ok) throw new Error('Erro ao enviar arquivo')
+      toast.success('Contrato assinado enviado com sucesso')
+      fetchContratos(clienteIdFiltro)
+      // Atualiza detalhe se estiver aberto
+      if (visualizando?.id === contratoId) handleVisualizar(contratoId)
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Erro')
+    } finally {
+      setUploadingId(null)
+    }
+  }
+
   return (
     <div className="min-h-screen bg-gray-50 p-8">
       <div className="max-w-4xl mx-auto space-y-6">
@@ -286,35 +343,58 @@ export default function ContratosPage() {
                 <Table>
                   <TableHeader>
                     <TableRow>
+                      <TableHead>Nº</TableHead>
                       <TableHead>Data Início</TableHead>
-                      <TableHead>Periodicidade</TableHead>
                       <TableHead>Valor Total</TableHead>
                       <TableHead>Status</TableHead>
-                      <TableHead className="w-24">Ações</TableHead>
+                      <TableHead>Assinado</TableHead>
+                      <TableHead className="w-36">Ações</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {contratos.length === 0 ? (
                       <TableRow>
-                        <TableCell colSpan={5} className="text-center text-muted-foreground py-8">
+                        <TableCell colSpan={6} className="text-center text-muted-foreground py-8">
                           {clienteIdFiltro ? 'Nenhum contrato encontrado.' : 'Selecione um cliente para ver os contratos.'}
                         </TableCell>
                       </TableRow>
                     ) : (
                       contratos.map(c => (
                         <TableRow key={c.id}>
+                          <TableCell className="text-xs font-mono text-muted-foreground">{(c as any).numero || '—'}</TableCell>
                           <TableCell>{c.data_inicio}</TableCell>
-                          <TableCell className="capitalize">{c.periodicidade}</TableCell>
                           <TableCell>{formatMoeda(c.valor_total)}</TableCell>
                           <TableCell>
-                            <Badge variant={statusVariant(c.status)} className="capitalize">
-                              {c.status}
-                            </Badge>
+                            <Badge variant={statusVariant(c.status)} className="capitalize">{c.status}</Badge>
                           </TableCell>
                           <TableCell>
-                            <Button variant="outline" size="sm" onClick={() => handleEditarContrato(c)}>
-                              Editar
-                            </Button>
+                            {(c as any).assinado_em ? (
+                              <span className="flex items-center gap-1 text-emerald-600 text-xs">
+                                <CheckCircle2 className="w-3.5 h-3.5" /> Sim
+                              </span>
+                            ) : (
+                              <span className="text-xs text-muted-foreground">Pendente</span>
+                            )}
+                          </TableCell>
+                          <TableCell>
+                            <div className="flex gap-1">
+                              <Button variant="ghost" size="sm" className="h-8 w-8 p-0" title="Visualizar"
+                                onClick={() => handleVisualizar(c.id)} disabled={loadingDetalhe}>
+                                <Eye className="w-3.5 h-3.5" />
+                              </Button>
+                              <Button variant="ghost" size="sm" className="h-8 w-8 p-0" title="Baixar PDF"
+                                onClick={() => window.open(`/api/financeiro/contratos/pdf?id=${c.id}`, '_blank')}>
+                                <FileText className="w-3.5 h-3.5" />
+                              </Button>
+                              <Button variant="ghost" size="sm" className="h-8 w-8 p-0" title="Upload assinado"
+                                onClick={() => { fileInputRef.current && (fileInputRef.current.dataset.contratoid = c.id); fileInputRef.current?.click() }}
+                                disabled={uploadingId === c.id}>
+                                <Upload className="w-3.5 h-3.5" />
+                              </Button>
+                              <Button variant="ghost" size="sm" className="h-8 px-2 text-xs" onClick={() => handleEditarContrato(c)}>
+                                Editar
+                              </Button>
+                            </div>
                           </TableCell>
                         </TableRow>
                       ))
@@ -508,6 +588,20 @@ export default function ContratosPage() {
           </Card>
         )}
 
+        {/* Input oculto para upload de arquivo assinado */}
+        <input
+          type="file"
+          accept="application/pdf,image/*"
+          ref={fileInputRef}
+          className="hidden"
+          onChange={e => {
+            const file = e.target.files?.[0]
+            const id = fileInputRef.current?.dataset.contratoid
+            if (file && id) handleUploadAssinado(id, file)
+            e.target.value = ''
+          }}
+        />
+
         {/* Dialog de edição de contrato */}
         <Dialog open={editandoContrato !== null} onOpenChange={open => !open && setEditandoContrato(null)}>
           <DialogContent>
@@ -569,6 +663,158 @@ export default function ContratosPage() {
                   </Button>
                 </div>
               </form>
+            )}
+          </DialogContent>
+        </Dialog>
+
+        {/* Modal de visualização do contrato */}
+        <Dialog open={!!visualizando} onOpenChange={v => !v && setVisualizando(null)}>
+          <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+            {visualizando && (
+              <>
+                <DialogHeader>
+                  <DialogTitle className="flex items-center gap-3">
+                    <FileText className="w-5 h-5 text-slate-500" />
+                    Contrato {visualizando.numero}
+                    <Badge variant={statusVariant(visualizando.status)} className="capitalize ml-1">
+                      {visualizando.status}
+                    </Badge>
+                  </DialogTitle>
+                </DialogHeader>
+
+                {/* Ações do topo */}
+                <div className="flex gap-2 flex-wrap">
+                  <Button size="sm" variant="outline" onClick={() => window.open(`/api/financeiro/contratos/pdf?id=${visualizando.id}`, '_blank')}>
+                    <Download className="w-3.5 h-3.5 mr-1.5" /> Baixar PDF
+                  </Button>
+                  <Button size="sm" variant="outline" onClick={() => window.print()}>
+                    <FileText className="w-3.5 h-3.5 mr-1.5" /> Imprimir
+                  </Button>
+                  <Button size="sm" variant="outline"
+                    onClick={() => { fileInputRef.current && (fileInputRef.current.dataset.contratoid = visualizando.id); fileInputRef.current?.click() }}
+                    disabled={uploadingId === visualizando.id}>
+                    <Upload className="w-3.5 h-3.5 mr-1.5" />
+                    {uploadingId === visualizando.id ? 'Enviando...' : 'Upload assinado'}
+                  </Button>
+                  {visualizando.assinado_nome && (
+                    <Button size="sm" variant="outline" className="text-emerald-700 border-emerald-300"
+                      onClick={() => window.open(`/api/financeiro/contratos/download-assinado?id=${visualizando.id}`, '_blank')}>
+                      <Download className="w-3.5 h-3.5 mr-1.5" /> Baixar assinado
+                    </Button>
+                  )}
+                </div>
+
+                {/* Status de assinatura */}
+                {visualizando.assinado_em ? (
+                  <div className="rounded-lg bg-emerald-50 border border-emerald-200 p-3 flex items-center gap-2">
+                    <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                    <div className="text-sm">
+                      <span className="font-medium text-emerald-800">Contrato assinado</span>
+                      <span className="text-emerald-700 ml-2 text-xs">em {visualizando.assinado_em}</span>
+                      {visualizando.assinado_nome && (
+                        <span className="text-emerald-600 ml-2 text-xs">· {visualizando.assinado_nome}</span>
+                      )}
+                    </div>
+                  </div>
+                ) : (
+                  <div className="rounded-lg bg-amber-50 border border-amber-200 p-3 text-sm text-amber-800">
+                    Aguardando assinatura de ambas as partes. Baixe o PDF, colete as assinaturas e faça o upload acima.
+                  </div>
+                )}
+
+                <Separator />
+
+                {/* Partes */}
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-1">
+                    <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Contratante</p>
+                    <p className="text-sm font-medium">{visualizando.empresa.razao_social || 'Fortes Bezerra'}</p>
+                    {visualizando.empresa.cnpj && <p className="text-xs text-muted-foreground">CNPJ: {visualizando.empresa.cnpj}</p>}
+                    {visualizando.empresa.municipio && <p className="text-xs text-muted-foreground">{visualizando.empresa.municipio}/{visualizando.empresa.uf}</p>}
+                  </div>
+                  <div className="space-y-1">
+                    <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Contratado</p>
+                    <p className="text-sm font-medium">{visualizando.cliente.razao_social}</p>
+                    {visualizando.cliente.cnpj && <p className="text-xs text-muted-foreground">CNPJ: {visualizando.cliente.cnpj}</p>}
+                    {visualizando.cliente.municipio && <p className="text-xs text-muted-foreground">{visualizando.cliente.municipio}/{visualizando.cliente.uf}</p>}
+                    {visualizando.cliente.email && <p className="text-xs text-muted-foreground">{visualizando.cliente.email}</p>}
+                  </div>
+                </div>
+
+                <Separator />
+
+                {/* CNPJs cobertos */}
+                {visualizando.cnpjs.length > 0 && (
+                  <div className="space-y-1.5">
+                    <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">CNPJs Cobertos</p>
+                    <div className="flex flex-wrap gap-1.5">
+                      {visualizando.cnpjs.map((c, i) => (
+                        <Badge key={i} variant="outline" className="text-xs font-mono">
+                          {c.cnpj}{c.principal ? ' ★' : c.descricao ? ` — ${c.descricao}` : ''}
+                        </Badge>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Itens / produtos */}
+                <div className="space-y-1.5">
+                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Produtos Contratados</p>
+                  <div className="rounded-lg border overflow-hidden">
+                    <table className="w-full text-sm">
+                      <thead className="bg-slate-50">
+                        <tr>
+                          <th className="px-3 py-2 text-left text-xs font-semibold text-slate-600">Produto</th>
+                          <th className="px-3 py-2 text-left text-xs font-semibold text-slate-600">Plano</th>
+                          <th className="px-3 py-2 text-right text-xs font-semibold text-slate-600">Valor</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {visualizando.itens.map((item, i) => (
+                          <tr key={i} className="border-t">
+                            <td className="px-3 py-2 text-slate-700">{item.produto}</td>
+                            <td className="px-3 py-2 text-slate-600">{item.plano}</td>
+                            <td className="px-3 py-2 text-right font-medium">
+                              {item.valor_item != null ? formatMoeda(item.valor_item) : '—'}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                      <tfoot className="bg-slate-50 border-t">
+                        <tr>
+                          <td colSpan={2} className="px-3 py-2 text-sm font-semibold text-right">Total:</td>
+                          <td className="px-3 py-2 text-right font-bold text-emerald-700">
+                            {formatMoeda(visualizando.valor_total)}
+                          </td>
+                        </tr>
+                      </tfoot>
+                    </table>
+                  </div>
+                </div>
+
+                {/* Condições */}
+                <div className="grid grid-cols-3 gap-3 text-sm">
+                  <div className="rounded-lg bg-slate-50 border p-3">
+                    <p className="text-xs text-muted-foreground mb-0.5">Início</p>
+                    <p className="font-medium">{visualizando.data_inicio}</p>
+                  </div>
+                  <div className="rounded-lg bg-slate-50 border p-3">
+                    <p className="text-xs text-muted-foreground mb-0.5">Periodicidade</p>
+                    <p className="font-medium capitalize">{visualizando.periodicidade}</p>
+                  </div>
+                  <div className="rounded-lg bg-slate-50 border p-3">
+                    <p className="text-xs text-muted-foreground mb-0.5">Criado em</p>
+                    <p className="font-medium text-xs">{new Date(visualizando.criado_em).toLocaleDateString('pt-BR')}</p>
+                  </div>
+                </div>
+
+                {visualizando.observacoes && (
+                  <div className="rounded-lg bg-slate-50 border p-3 text-sm">
+                    <p className="text-xs font-semibold text-muted-foreground mb-1">Observações</p>
+                    <p className="text-slate-700">{visualizando.observacoes}</p>
+                  </div>
+                )}
+              </>
             )}
           </DialogContent>
         </Dialog>
