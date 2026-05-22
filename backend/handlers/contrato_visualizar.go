@@ -599,11 +599,12 @@ func gerarContratoPDF(d *ContratoDetalhe) ([]byte, error) {
 			col.New(2),
 			col.New(5).Add(text.New("CONTRATADA", props.Text{Size: 8.5, Style: fontstyle.Bold, Align: align.Center})),
 		),
-		row.New(5).Add(
+		row.New(10).Add(
 			col.New(5).Add(text.New(nomeEmpresa, props.Text{Size: 8, Align: align.Center, Style: fontstyle.Italic})),
 			col.New(2),
 			col.New(5).Add(text.New(d.Cliente.RazaoSocial, props.Text{Size: 8, Align: align.Center, Style: fontstyle.Italic})),
 		),
+		esp(2),
 		row.New(5).Add(
 			col.New(5).Add(text.New("CNPJ: "+cnpjEmpresa, props.Text{Size: 7.5, Align: align.Center})),
 			col.New(2),
