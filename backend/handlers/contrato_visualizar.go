@@ -46,6 +46,9 @@ type ContratoCliente struct {
 	Fone        string `json:"fone"`
 	Municipio   string `json:"municipio"`
 	UF          string `json:"uf"`
+	Responsavel string `json:"responsavel"`
+	Logradouro  string `json:"logradouro"`
+	NumeroEnd   string `json:"numero_end"`
 }
 
 type ContratoEmpresa struct {
@@ -104,7 +107,8 @@ func carregarDetalheContrato(db *sql.DB, id string) (*ContratoDetalhe, error) {
 		       c.valor_total, c.status, COALESCE(c.observacoes,''), c.created_at,
 		       c.assinado_em, c.assinado_nome,
 		       cl.razao_social, COALESCE(cl.cnpj,''), COALESCE(cl.email,''),
-		       COALESCE(cl.fone,''), COALESCE(cl.municipio,''), COALESCE(cl.uf,'')
+		       COALESCE(cl.telefone,''), COALESCE(cl.municipio,''), COALESCE(cl.uf,''),
+		       COALESCE(cl.responsavel,''), COALESCE(cl.logradouro,''), COALESCE(cl.numero,'')
 		FROM financeiro.contratos c
 		JOIN financeiro.clientes cl ON cl.id = c.cliente_id
 		WHERE c.id = $1`, id,
@@ -114,9 +118,13 @@ func carregarDetalheContrato(db *sql.DB, id string) (*ContratoDetalhe, error) {
 		&assinadoEmTime, &assinadoNome,
 		&d.Cliente.RazaoSocial, &d.Cliente.CNPJ, &d.Cliente.Email,
 		&d.Cliente.Fone, &d.Cliente.Municipio, &d.Cliente.UF,
+		&d.Cliente.Responsavel, &d.Cliente.Logradouro, &d.Cliente.NumeroEnd,
 	)
-	if err != nil {
+	if err == sql.ErrNoRows {
 		return nil, fmt.Errorf("contrato não encontrado")
+	}
+	if err != nil {
+		return nil, fmt.Errorf("erro ao carregar contrato: %w", err)
 	}
 	d.Observacoes = obs.String
 	if assinadoEmTime.Valid {
@@ -271,8 +279,20 @@ func gerarContratoPDF(d *ContratoDetalhe) ([]byte, error) {
 	if d.Cliente.CNPJ != "" {
 		addRows(txtNorm(fmt.Sprintf("CNPJ: %s", d.Cliente.CNPJ), 9))
 	}
-	if d.Cliente.Municipio != "" {
+	if d.Cliente.Logradouro != "" {
+		end := d.Cliente.Logradouro
+		if d.Cliente.NumeroEnd != "" {
+			end += ", " + d.Cliente.NumeroEnd
+		}
+		if d.Cliente.Municipio != "" {
+			end += fmt.Sprintf(" — %s/%s", d.Cliente.Municipio, d.Cliente.UF)
+		}
+		addRows(txtNorm(end, 9))
+	} else if d.Cliente.Municipio != "" {
 		addRows(txtNorm(fmt.Sprintf("%s/%s", d.Cliente.Municipio, d.Cliente.UF), 9))
+	}
+	if d.Cliente.Responsavel != "" {
+		addRows(txtNorm(fmt.Sprintf("Responsável: %s", d.Cliente.Responsavel), 9))
 	}
 	if d.Cliente.Email != "" {
 		addRows(txtNorm(fmt.Sprintf("E-mail: %s", d.Cliente.Email), 9))

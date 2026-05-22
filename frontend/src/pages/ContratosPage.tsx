@@ -74,7 +74,7 @@ interface ContratoDetalhe {
   criado_em: string
   assinado_em?: string
   assinado_nome?: string
-  cliente: { razao_social: string; cnpj: string; email: string; fone: string; municipio: string; uf: string }
+  cliente: { razao_social: string; cnpj: string; email: string; fone: string; municipio: string; uf: string; responsavel: string; logradouro: string; numero_end: string }
   empresa: { razao_social: string; nome_fantasia: string; cnpj: string; logradouro: string; numero: string; municipio: string; uf: string }
   cnpjs: { cnpj: string; descricao: string; principal: boolean }[]
   itens: { produto: string; plano: string; valor_item?: number }[]
@@ -736,8 +736,16 @@ export default function ContratosPage() {
                     <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Contratado</p>
                     <p className="text-sm font-medium">{visualizando.cliente.razao_social}</p>
                     {visualizando.cliente.cnpj && <p className="text-xs text-muted-foreground">CNPJ: {visualizando.cliente.cnpj}</p>}
-                    {visualizando.cliente.municipio && <p className="text-xs text-muted-foreground">{visualizando.cliente.municipio}/{visualizando.cliente.uf}</p>}
+                    {visualizando.cliente.logradouro && (
+                      <p className="text-xs text-muted-foreground">
+                        {visualizando.cliente.logradouro}{visualizando.cliente.numero_end ? `, ${visualizando.cliente.numero_end}` : ''}
+                        {visualizando.cliente.municipio ? ` — ${visualizando.cliente.municipio}/${visualizando.cliente.uf}` : ''}
+                      </p>
+                    )}
+                    {!visualizando.cliente.logradouro && visualizando.cliente.municipio && <p className="text-xs text-muted-foreground">{visualizando.cliente.municipio}/{visualizando.cliente.uf}</p>}
+                    {visualizando.cliente.responsavel && <p className="text-xs text-muted-foreground">Responsável: {visualizando.cliente.responsavel}</p>}
                     {visualizando.cliente.email && <p className="text-xs text-muted-foreground">{visualizando.cliente.email}</p>}
+                    {visualizando.cliente.fone && <p className="text-xs text-muted-foreground">Tel: {visualizando.cliente.fone}</p>}
                   </div>
                 </div>
 
