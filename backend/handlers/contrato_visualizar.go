@@ -242,9 +242,25 @@ func formatarCNPJ(cnpj string) string {
 	return cnpj
 }
 
+var formatsData = []string{
+	"2006-01-02",
+	time.RFC3339,
+	"2006-01-02T15:04:05Z",
+	"2006-01-02 15:04:05",
+}
+
+func parseData(iso string) (time.Time, bool) {
+	for _, f := range formatsData {
+		if t, err := time.Parse(f, iso); err == nil {
+			return t, true
+		}
+	}
+	return time.Time{}, false
+}
+
 func formatarData(iso string) string {
-	t, err := time.Parse("2006-01-02", iso)
-	if err != nil {
+	t, ok := parseData(iso)
+	if !ok {
 		return iso
 	}
 	meses := []string{"", "janeiro", "fevereiro", "março", "abril", "maio", "junho",
@@ -253,8 +269,8 @@ func formatarData(iso string) string {
 }
 
 func formatarDataCurta(iso string) string {
-	t, err := time.Parse("2006-01-02", iso)
-	if err != nil {
+	t, ok := parseData(iso)
+	if !ok {
 		return iso
 	}
 	return t.Format("02/01/2006")
@@ -283,7 +299,7 @@ func logoParaCabecalho() []byte {
 		return nil
 	}
 	boost := func(v uint32) uint8 {
-		val := float64(v>>8) * 1.25
+		val := float64(v>>8) * 1.55
 		if val > 255 {
 			val = 255
 		}
@@ -539,25 +555,39 @@ func gerarContratoPDF(d *ContratoDetalhe) ([]byte, error) {
 
 	// ── CLÁUSULA 6ª ───────────────────────────────────────────────────────────
 	add(
-		clausulaTitulo("CLÁUSULA 6ª – DA PROPRIEDADE INTELECTUAL E CONFIDENCIALIDADE"),
+		clausulaTitulo("CLÁUSULA 6ª – DA PROPRIEDADE INTELECTUAL"),
 		esp(2),
-		para("6.1. Todos os sistemas, softwares, algoritmos, bases de dados, interfaces, documentações e demais ativos tecnológicos disponibilizados pela CONTRATANTE são de sua exclusiva propriedade intelectual, protegidos pela Lei nº 9.279/1996 e pela Lei nº 9.609/1998 (Lei do Software), sendo vedada qualquer reprodução, cópia, engenharia reversa ou uso não autorizado.", 22),
+		para("6.1. Todos os sistemas, softwares, algoritmos, bases de dados, interfaces, documentações e demais ativos tecnológicos disponibilizados pela CONTRATANTE são de sua exclusiva propriedade intelectual, protegidos pela Lei nº 9.279/1996 e pela Lei nº 9.609/1998 (Lei do Software), sendo vedada qualquer reprodução, cópia, engenharia reversa, adaptação ou uso não autorizado, sob pena de responsabilização civil e criminal.", 24),
 		esp(2),
-		para("6.2. As PARTES se comprometem a manter sigilo sobre todas as informações técnicas, comerciais e operacionais a que tiverem acesso em virtude deste Contrato, durante sua vigência e pelo prazo de 5 (cinco) anos após seu término.", 16),
+		para("6.2. A CONTRATADA reconhece que os sistemas disponibilizados constituem segredo industrial e comercial da CONTRATANTE, comprometendo-se a não desenvolver, direta ou indiretamente, produto ou serviço concorrente com base em informações obtidas por meio deste Contrato.", 18),
 		esp(5),
 	)
 
-	// ── CLÁUSULA 7ª ───────────────────────────────────────────────────────────
+	// ── CLÁUSULA 7ª – NDA ─────────────────────────────────────────────────────
 	add(
-		clausulaTitulo("CLÁUSULA 7ª – DA PROTEÇÃO DE DADOS PESSOAIS (LGPD)"),
+		clausulaTitulo("CLÁUSULA 7ª – DO SIGILO E CONFIDENCIALIDADE (NDA)"),
 		esp(2),
-		para("As PARTES declaram estar cientes e em conformidade com a Lei Geral de Proteção de Dados Pessoais — LGPD (Lei nº 13.709/2018). A CONTRATANTE atuará como Operadora dos dados pessoais eventualmente processados nos sistemas em nome da CONTRATADA (Controladora), comprometendo-se a adotar medidas técnicas e administrativas adequadas para garantir a segurança, confidencialidade e integridade das informações tratadas.", 28),
+		para("7.1. As PARTES reconhecem que, em razão da execução deste Contrato, terão acesso a informações confidenciais da outra parte, incluindo, mas não se limitando a: dados técnicos, estratégias comerciais, listas de clientes, metodologias, precificação, planos de negócio, código-fonte, arquiteturas de sistemas e quaisquer outras informações designadas como confidenciais ou que, pela sua natureza, devam ser tratadas como tal.", 28),
+		esp(2),
+		para("7.2. Cada PARTE obriga-se a: (i) manter em estrito sigilo todas as Informações Confidenciais recebidas; (ii) utilizar tais informações exclusivamente para os fins previstos neste Contrato; (iii) não divulgar, reproduzir ou transferir as Informações Confidenciais a terceiros sem autorização prévia e escrita da outra PARTE; (iv) adotar medidas de segurança adequadas para proteger as informações, no mínimo equivalentes às que adota para proteger suas próprias informações confidenciais.", 28),
+		esp(2),
+		para("7.3. As obrigações de confidencialidade não se aplicam a informações que: (i) sejam ou se tornem públicas sem culpa da PARTE receptora; (ii) já eram de conhecimento da PARTE receptora antes da divulgação; (iii) sejam recebidas de terceiros sem restrição de sigilo; ou (iv) devam ser divulgadas por determinação legal ou judicial, desde que a PARTE afetada seja imediatamente notificada.", 26),
+		esp(2),
+		para("7.4. As obrigações estabelecidas nesta Cláusula permanecerão em vigor durante toda a vigência do Contrato e pelo prazo de 5 (cinco) anos após sua extinção, independentemente do motivo. O descumprimento sujeitará a PARTE infratora ao pagamento de indenização por perdas e danos, sem prejuízo das medidas cautelares cabíveis.", 22),
 		esp(5),
 	)
 
 	// ── CLÁUSULA 8ª ───────────────────────────────────────────────────────────
 	add(
-		clausulaTitulo("CLÁUSULA 8ª – DO FORO"),
+		clausulaTitulo("CLÁUSULA 8ª – DA PROTEÇÃO DE DADOS PESSOAIS (LGPD)"),
+		esp(2),
+		para("As PARTES declaram estar cientes e em conformidade com a Lei Geral de Proteção de Dados Pessoais — LGPD (Lei nº 13.709/2018). A CONTRATANTE atuará como Operadora dos dados pessoais eventualmente processados nos sistemas em nome da CONTRATADA (Controladora), comprometendo-se a adotar medidas técnicas e administrativas adequadas para garantir a segurança, confidencialidade e integridade das informações tratadas.", 28),
+		esp(5),
+	)
+
+	// ── CLÁUSULA 9ª ───────────────────────────────────────────────────────────
+	add(
+		clausulaTitulo("CLÁUSULA 9ª – DO FORO"),
 		esp(2),
 		para(fmt.Sprintf("Fica eleito o foro da Comarca de %s, Estado de %s, com exclusão de qualquer outro, por mais privilegiado que seja, para dirimir quaisquer litígios decorrentes deste Contrato.", municipioEmpresa, ufEmpresa), 12),
 		esp(5),
