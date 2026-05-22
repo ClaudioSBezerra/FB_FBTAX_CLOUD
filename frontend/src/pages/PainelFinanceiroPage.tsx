@@ -308,6 +308,7 @@ export default function PainelFinanceiroPage() {
 
   const [bancos, setBancos] = useState<BancoStatus[]>([])
   const [providers, setProviders] = useState<string[]>([])
+  const [listaBancos, setListaBancos] = useState<{ code: number; name: string }[]>([])
   const [syncingConta, setSyncingConta] = useState<string | null>(null)
   const [modalConfig, setModalConfig] = useState<BancoStatus | null>(null)
   const [config, setConfig] = useState<ProviderConfig & { provedor: string }>({
@@ -328,12 +329,14 @@ export default function PainelFinanceiroPage() {
       fetch('/api/financeiro/transacoes?limit=30').then(r => r.json()),
       fetch('/api/financeiro/bancos/status').then(r => r.json()),
       fetch('/api/financeiro/bancos/providers').then(r => r.json()),
-    ]).then(([p, c, t, b, prov]) => {
+      fetch('/api/bancos').then(r => r.ok ? r.json() : []).catch(() => []),
+    ]).then(([p, c, t, b, prov, lb]) => {
       setPainel(p)
       setContas(c ?? [])
       setTransacoes(t ?? [])
       setBancos(b ?? [])
       setProviders(prov ?? [])
+      setListaBancos(lb ?? [])
     }).catch(() => setError('Erro ao carregar dados financeiros'))
   }
 
@@ -792,6 +795,11 @@ export default function PainelFinanceiroPage() {
             <div>
               <Label>Banco *</Label>
               <Input list="bancos-list-painel" value={novaConta.banco} onChange={e => setNovaConta(p => ({ ...p, banco: e.target.value }))} required placeholder="Ex: 001 - BCO DO BRASIL S.A." />
+              <datalist id="bancos-list-painel">
+                {listaBancos.map(b => (
+                  <option key={b.code} value={`${String(b.code).padStart(3, '0')} - ${b.name}`} />
+                ))}
+              </datalist>
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div>
