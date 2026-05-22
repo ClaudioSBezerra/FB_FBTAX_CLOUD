@@ -275,13 +275,19 @@ func formatarMoeda(v float64) string {
 	return fmt.Sprintf("R$ %s,%02d", string(result), dec)
 }
 
-// logoParaCabecalho remove o fundo escuro do PNG e mantém o símbolo
-// com a cor natural da marca (bege/marrom). Pixels escuros (luminância < 40%)
-// tornam-se transparentes; os demais ficam totalmente opacos.
+// logoParaCabecalho remove o fundo escuro do PNG, mantém o símbolo da marca
+// e intensifica levemente as cores para melhor contraste no PDF.
 func logoParaCabecalho() []byte {
 	src, err := png.Decode(bytes.NewReader(logoFBBytes))
 	if err != nil {
 		return nil
+	}
+	boost := func(v uint32) uint8 {
+		val := float64(v>>8) * 1.25
+		if val > 255 {
+			val = 255
+		}
+		return uint8(val)
 	}
 	bounds := src.Bounds()
 	dst := image.NewRGBA(bounds)
@@ -289,14 +295,14 @@ func logoParaCabecalho() []byte {
 		for x := bounds.Min.X; x < bounds.Max.X; x++ {
 			r, g, b, _ := src.At(x, y).RGBA() // valores 0-65535
 			lum := (r + g + b) / 3
-			if lum < 26000 { // fundo escuro → transparente
+			if lum < 20000 { // fundo escuro → transparente
 				dst.SetRGBA(x, y, color.RGBA{})
 			} else {
-				// símbolo → cor natural, totalmente opaco
+				// símbolo → cor com boost de 25%
 				dst.SetRGBA(x, y, color.RGBA{
-					R: uint8(r >> 8),
-					G: uint8(g >> 8),
-					B: uint8(b >> 8),
+					R: boost(r),
+					G: boost(g),
+					B: boost(b),
 					A: 255,
 				})
 			}
@@ -388,15 +394,15 @@ func gerarContratoPDF(d *ContratoDetalhe) ([]byte, error) {
 		endCliente = fmt.Sprintf("%s/%s", d.Cliente.Municipio, d.Cliente.UF)
 	}
 
-	// ── CABEÇALHO ─────────────────────────────────────────────────────────────
+	// ── CABEÇALHO (repetido em todas as páginas) ──────────────────────────────
 	logoBytes := logoParaCabecalho()
 	var logoCol core.Col
 	if logoBytes != nil {
-		logoCol = col.New(2).Add(mimage.NewFromBytes(logoBytes, extension.Png, props.Rect{Percent: 90, Center: true}))
+		logoCol = col.New(2).Add(mimage.NewFromBytes(logoBytes, extension.Png, props.Rect{Percent: 95, Left: 0}))
 	} else {
 		logoCol = col.New(2)
 	}
-	add(
+	mrt.RegisterHeader(
 		row.New(16).Add(
 			logoCol,
 			col.New(6).Add(text.New(nomeEmpresa, props.Text{Size: 13, Style: fontstyle.Bold, Align: align.Left, Top: 3})),
