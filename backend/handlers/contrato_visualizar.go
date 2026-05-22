@@ -16,6 +16,7 @@ import (
 
 	"github.com/johnfercher/maroto/v2"
 	"github.com/johnfercher/maroto/v2/pkg/components/col"
+	mimage "github.com/johnfercher/maroto/v2/pkg/components/image"
 	"github.com/johnfercher/maroto/v2/pkg/components/line"
 	"github.com/johnfercher/maroto/v2/pkg/components/row"
 	"github.com/johnfercher/maroto/v2/pkg/components/text"
@@ -274,7 +275,10 @@ func formatarMoeda(v float64) string {
 	return fmt.Sprintf("R$ %s,%02d", string(result), dec)
 }
 
-func logoMarcaDagua() []byte {
+// logoParaCabecalho remove o fundo escuro do PNG e mantém o símbolo
+// com a cor natural da marca (bege/marrom). Pixels escuros (luminância < 40%)
+// tornam-se transparentes; os demais ficam totalmente opacos.
+func logoParaCabecalho() []byte {
 	src, err := png.Decode(bytes.NewReader(logoFBBytes))
 	if err != nil {
 		return nil
@@ -283,14 +287,19 @@ func logoMarcaDagua() []byte {
 	dst := image.NewRGBA(bounds)
 	for y := bounds.Min.Y; y < bounds.Max.Y; y++ {
 		for x := bounds.Min.X; x < bounds.Max.X; x++ {
-			r, g, b, a := src.At(x, y).RGBA()
-			// reduz alpha para 10% — marca d'água bem discreta
-			dst.SetRGBA(x, y, color.RGBA{
-				R: uint8(r >> 8),
-				G: uint8(g >> 8),
-				B: uint8(b >> 8),
-				A: uint8((a >> 8) * 10 / 100),
-			})
+			r, g, b, _ := src.At(x, y).RGBA() // valores 0-65535
+			lum := (r + g + b) / 3
+			if lum < 26000 { // fundo escuro → transparente
+				dst.SetRGBA(x, y, color.RGBA{})
+			} else {
+				// símbolo → cor natural, totalmente opaco
+				dst.SetRGBA(x, y, color.RGBA{
+					R: uint8(r >> 8),
+					G: uint8(g >> 8),
+					B: uint8(b >> 8),
+					A: 255,
+				})
+			}
 		}
 	}
 	var buf bytes.Buffer
@@ -301,16 +310,11 @@ func logoMarcaDagua() []byte {
 }
 
 func gerarContratoPDF(d *ContratoDetalhe) ([]byte, error) {
-	builder := config.NewBuilder().
+	mrt := maroto.New(config.NewBuilder().
 		WithLeftMargin(18).
 		WithRightMargin(18).
-		WithTopMargin(12)
-
-	if logoBytes := logoMarcaDagua(); logoBytes != nil {
-		builder = builder.WithBackgroundImage(logoBytes, extension.Png)
-	}
-
-	mrt := maroto.New(builder.Build())
+		WithTopMargin(12).
+		Build())
 	add := func(rs ...core.Row) { mrt.AddRows(rs...) }
 
 	// ── helpers ────────────────────────────────────────────────────────────────
@@ -385,10 +389,18 @@ func gerarContratoPDF(d *ContratoDetalhe) ([]byte, error) {
 	}
 
 	// ── CABEÇALHO ─────────────────────────────────────────────────────────────
+	logoBytes := logoParaCabecalho()
+	var logoCol core.Col
+	if logoBytes != nil {
+		logoCol = col.New(2).Add(mimage.NewFromBytes(logoBytes, extension.Png, props.Rect{Percent: 90, Center: true}))
+	} else {
+		logoCol = col.New(2)
+	}
 	add(
-		row.New(11).Add(
-			col.New(8).Add(text.New(nomeEmpresa, props.Text{Size: 14, Style: fontstyle.Bold, Align: align.Left})),
-			col.New(4).Add(text.New(fmt.Sprintf("Nº %s", d.Numero), props.Text{Size: 9, Align: align.Right, Style: fontstyle.Bold})),
+		row.New(16).Add(
+			logoCol,
+			col.New(6).Add(text.New(nomeEmpresa, props.Text{Size: 13, Style: fontstyle.Bold, Align: align.Left, Top: 3})),
+			col.New(4).Add(text.New(fmt.Sprintf("Nº %s", d.Numero), props.Text{Size: 9, Align: align.Right, Style: fontstyle.Bold, Top: 3})),
 		),
 		row.New(6).Add(col.New(12).Add(
 			text.New("FbTax Cloud - Soluções Inteligentes", props.Text{Size: 9.5, Align: align.Left}),
