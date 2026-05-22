@@ -43,6 +43,8 @@ func TokensHandler(db *sql.DB) http.HandlerFunc {
 			handleGetTokens(w, r, db)
 		case http.MethodPost:
 			handleReativarToken(w, r, db)
+		case http.MethodPut:
+			handleInativarToken(w, r, db)
 		default:
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		}
@@ -240,4 +242,36 @@ func runTokenUpdate(db *sql.DB) {
 		db.Exec(`UPDATE financeiro.tokens SET alerta_enviado = true WHERE id = $1`, tokenID) //nolint
 		log.Printf("[Tokens] Alerta vencimento enviado — token %s (vence %s)", tokenID, validUntil)
 	}
+}
+
+func handleInativarToken(w http.ResponseWriter, r *http.Request, db *sql.DB) {
+	var req struct {
+		TokenID string `json:"token_id"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.TokenID == "" {
+		http.Error(w, "token_id obrigatório", http.StatusBadRequest)
+		return
+	}
+
+	var status string
+	err := db.QueryRow(`SELECT status FROM financeiro.tokens WHERE id = $1`, req.TokenID).Scan(&status)
+	if err == sql.ErrNoRows {
+		http.Error(w, "token não encontrado", http.StatusNotFound)
+		return
+	}
+	if err != nil {
+		http.Error(w, "erro ao buscar token", http.StatusInternalServerError)
+		return
+	}
+	if status == "encerrado" {
+		http.Error(w, "token já está encerrado", http.StatusConflict)
+		return
+	}
+
+	_, err = db.Exec(`UPDATE financeiro.tokens SET status = 'encerrado', updated_at = NOW() WHERE id = $1`, req.TokenID)
+	if err != nil {
+		http.Error(w, "erro ao inativar token", http.StatusInternalServerError)
+		return
+	}
+	json.NewEncoder(w).Encode(map[string]string{"status": "encerrado"})
 }

@@ -54,6 +54,7 @@ export default function TokensPage() {
   const [contratoId, setContratoId] = useState('')
   const [loading, setLoading] = useState(false)
   const [reativando, setReativando] = useState<Record<string, boolean>>({})
+  const [inativando, setInativando] = useState<Record<string, boolean>>({})
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
@@ -100,6 +101,25 @@ export default function TokensPage() {
       toast.error(err instanceof Error ? err.message : 'Erro')
     } finally {
       setReativando(prev => ({ ...prev, [tokenId]: false }))
+    }
+  }
+
+  const handleInativar = async (tokenId: string) => {
+    if (!confirm('Inativar este token? O cliente perderá acesso ao produto imediatamente.')) return
+    setInativando(prev => ({ ...prev, [tokenId]: true }))
+    try {
+      const res = await fetch('/api/financeiro/tokens', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token_id: tokenId }),
+      })
+      if (!res.ok) throw new Error(await res.text())
+      toast.success('Token inativado')
+      onContratoChange(contratoId)
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Erro')
+    } finally {
+      setInativando(prev => ({ ...prev, [tokenId]: false }))
     }
   }
 
@@ -196,16 +216,28 @@ export default function TokensPage() {
                               </span>
                             </TableCell>
                             <TableCell>
-                              {(t.status === 'suspenso' || t.status === 'em_carencia' || t.status === 'encerrado') && (
-                                <Button
-                                  size="sm"
-                                  variant="outline"
-                                  disabled={reativando[t.id]}
-                                  onClick={() => handleReativar(t.id)}
-                                >
-                                  {reativando[t.id] ? '...' : 'Reativar'}
-                                </Button>
-                              )}
+                              <div className="flex gap-1">
+                                {(t.status === 'suspenso' || t.status === 'em_carencia' || t.status === 'encerrado') && (
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    disabled={reativando[t.id]}
+                                    onClick={() => handleReativar(t.id)}
+                                  >
+                                    {reativando[t.id] ? '...' : 'Reativar'}
+                                  </Button>
+                                )}
+                                {t.status === 'ativo' && (
+                                  <Button
+                                    size="sm"
+                                    variant="destructive"
+                                    disabled={inativando[t.id]}
+                                    onClick={() => handleInativar(t.id)}
+                                  >
+                                    {inativando[t.id] ? '...' : 'Inativar'}
+                                  </Button>
+                                )}
+                              </div>
                             </TableCell>
                           </TableRow>
                         )
