@@ -307,6 +307,22 @@ export default function ContratosPage() {
     }
   }
 
+  const downloadAutenticado = async (url: string, nomeArquivo: string) => {
+    try {
+      const res = await fetch(url)
+      if (!res.ok) throw new Error(await res.text())
+      const blob = await res.blob()
+      const href = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = href
+      a.download = nomeArquivo
+      a.click()
+      URL.revokeObjectURL(href)
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Erro ao baixar arquivo')
+    }
+  }
+
   const handleExcluirContrato = async (id: string) => {
     if (!confirm('Excluir este contrato? Esta ação não pode ser desfeita.')) return
     try {
@@ -419,7 +435,7 @@ export default function ContratosPage() {
                                 <Eye className="w-3.5 h-3.5" />
                               </Button>
                               <Button variant="ghost" size="sm" className="h-8 w-8 p-0" title="Baixar PDF"
-                                onClick={() => window.open(`/api/financeiro/contratos/pdf?id=${c.id}`, '_blank')}>
+                                onClick={() => downloadAutenticado(`/api/financeiro/contratos/pdf?id=${c.id}`, `Contrato_${c.id.slice(0, 8)}.pdf`)}>
                                 <FileText className="w-3.5 h-3.5" />
                               </Button>
                               <Button variant="ghost" size="sm" className="h-8 w-8 p-0" title="Upload assinado"
@@ -724,7 +740,7 @@ export default function ContratosPage() {
 
                 {/* Ações do topo */}
                 <div className="flex gap-2 flex-wrap">
-                  <Button size="sm" variant="outline" onClick={() => window.open(`/api/financeiro/contratos/pdf?id=${visualizando.id}`, '_blank')}>
+                  <Button size="sm" variant="outline" onClick={() => downloadAutenticado(`/api/financeiro/contratos/pdf?id=${visualizando.id}`, `Contrato_${visualizando.numero || visualizando.id.slice(0,8)}.pdf`)}>
                     <Download className="w-3.5 h-3.5 mr-1.5" /> Baixar PDF
                   </Button>
                   <Button size="sm" variant="outline" onClick={() => window.print()}>
@@ -738,7 +754,7 @@ export default function ContratosPage() {
                   </Button>
                   {visualizando.assinado_nome && (
                     <Button size="sm" variant="outline" className="text-emerald-700 border-emerald-300"
-                      onClick={() => window.open(`/api/financeiro/contratos/download-assinado?id=${visualizando.id}`, '_blank')}>
+                      onClick={() => downloadAutenticado(`/api/financeiro/contratos/download-assinado?id=${visualizando.id}`, visualizando.assinado_nome || `Contrato_assinado_${visualizando.id.slice(0,8)}.pdf`)}>
                       <Download className="w-3.5 h-3.5 mr-1.5" /> Baixar assinado
                     </Button>
                   )}
