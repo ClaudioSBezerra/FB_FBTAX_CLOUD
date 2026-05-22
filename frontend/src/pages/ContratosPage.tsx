@@ -48,6 +48,8 @@ interface Contrato {
   status: string
   observacoes?: string
   created_at: string
+  tokens_ativos: number
+  tokens_total: number
 }
 
 interface ItemSelecionado {
@@ -363,6 +365,7 @@ export default function ContratosPage() {
                       <TableHead>Data Início</TableHead>
                       <TableHead>Valor Total</TableHead>
                       <TableHead>Status</TableHead>
+                      <TableHead>Tokens</TableHead>
                       <TableHead>Assinado</TableHead>
                       <TableHead className="w-36">Ações</TableHead>
                     </TableRow>
@@ -370,7 +373,7 @@ export default function ContratosPage() {
                   <TableBody>
                     {contratos.length === 0 ? (
                       <TableRow>
-                        <TableCell colSpan={6} className="text-center text-muted-foreground py-8">
+                        <TableCell colSpan={7} className="text-center text-muted-foreground py-8">
                           {clienteIdFiltro ? 'Nenhum contrato encontrado.' : 'Selecione um cliente para ver os contratos.'}
                         </TableCell>
                       </TableRow>
@@ -382,6 +385,23 @@ export default function ContratosPage() {
                           <TableCell>{formatMoeda(c.valor_total)}</TableCell>
                           <TableCell>
                             <Badge variant={statusVariant(c.status)} className="capitalize">{c.status}</Badge>
+                          </TableCell>
+                          <TableCell>
+                            {c.tokens_total === 0 ? (
+                              <span className="text-xs text-muted-foreground">—</span>
+                            ) : c.tokens_ativos === 0 ? (
+                              <Badge variant="destructive" className="text-xs">
+                                {c.tokens_total} inativo{c.tokens_total !== 1 ? 's' : ''}
+                              </Badge>
+                            ) : c.tokens_ativos < c.tokens_total ? (
+                              <Badge variant="outline" className="text-xs text-amber-600 border-amber-400">
+                                {c.tokens_ativos}/{c.tokens_total} ativos
+                              </Badge>
+                            ) : (
+                              <Badge variant="secondary" className="text-xs text-emerald-700 bg-emerald-50">
+                                {c.tokens_ativos} ativo{c.tokens_ativos !== 1 ? 's' : ''}
+                              </Badge>
+                            )}
                           </TableCell>
                           <TableCell>
                             {(c as any).assinado_em ? (

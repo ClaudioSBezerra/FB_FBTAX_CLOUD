@@ -33,15 +33,17 @@ type ContratoItemResponse struct {
 }
 
 type ContratoResponse struct {
-	ID           string                 `json:"id"`
-	ClienteID    string                 `json:"cliente_id"`
-	DataInicio   string                 `json:"data_inicio"`
-	Periodicidade string                `json:"periodicidade"`
-	ValorTotal   float64                `json:"valor_total"`
-	Status       string                 `json:"status"`
-	Observacoes  string                 `json:"observacoes,omitempty"`
-	CreatedAt    string                 `json:"created_at"`
-	Itens        []ContratoItemResponse `json:"itens"`
+	ID             string                 `json:"id"`
+	ClienteID      string                 `json:"cliente_id"`
+	DataInicio     string                 `json:"data_inicio"`
+	Periodicidade  string                 `json:"periodicidade"`
+	ValorTotal     float64                `json:"valor_total"`
+	Status         string                 `json:"status"`
+	Observacoes    string                 `json:"observacoes,omitempty"`
+	CreatedAt      string                 `json:"created_at"`
+	Itens          []ContratoItemResponse `json:"itens"`
+	TokensAtivos   int                    `json:"tokens_ativos"`
+	TokensTotal    int                    `json:"tokens_total"`
 }
 
 func ContratosHandler(db *sql.DB) http.HandlerFunc {
@@ -68,9 +70,14 @@ func ContratosHandler(db *sql.DB) http.HandlerFunc {
 
 func handleListContratos(w http.ResponseWriter, r *http.Request, db *sql.DB) {
 	clienteID := r.URL.Query().Get("cliente_id")
-	query := `SELECT c.id, c.cliente_id, c.data_inicio, c.periodicidade,
-	           c.valor_total, c.status, COALESCE(c.observacoes,''), c.created_at
-	    FROM financeiro.contratos c WHERE 1=1`
+	query := `
+		SELECT c.id, c.cliente_id, c.data_inicio, c.periodicidade,
+		       c.valor_total, c.status, COALESCE(c.observacoes,''), c.created_at,
+		       COUNT(t.id) FILTER (WHERE t.status = 'ativo')    AS tokens_ativos,
+		       COUNT(t.id)                                       AS tokens_total
+		FROM financeiro.contratos c
+		LEFT JOIN financeiro.tokens t ON t.contrato_id = c.id
+		WHERE 1=1`
 	args := []interface{}{}
 	argN := 1
 
@@ -79,7 +86,7 @@ func handleListContratos(w http.ResponseWriter, r *http.Request, db *sql.DB) {
 		args = append(args, clienteID)
 		argN++
 	}
-	query += ` ORDER BY c.created_at DESC`
+	query += ` GROUP BY c.id ORDER BY c.created_at DESC`
 
 	rows, err := db.Query(query, args...)
 	if err != nil {
@@ -92,7 +99,8 @@ func handleListContratos(w http.ResponseWriter, r *http.Request, db *sql.DB) {
 	for rows.Next() {
 		var c ContratoResponse
 		if err := rows.Scan(&c.ID, &c.ClienteID, &c.DataInicio, &c.Periodicidade,
-			&c.ValorTotal, &c.Status, &c.Observacoes, &c.CreatedAt); err != nil {
+			&c.ValorTotal, &c.Status, &c.Observacoes, &c.CreatedAt,
+			&c.TokensAtivos, &c.TokensTotal); err != nil {
 			http.Error(w, "internal server error", http.StatusInternalServerError)
 			return
 		}
