@@ -278,10 +278,10 @@ func handleDeleteContrato(w http.ResponseWriter, r *http.Request, db *sql.DB) {
 		return
 	}
 
-	var tokenCount int
-	db.QueryRow(`SELECT COUNT(*) FROM financeiro.tokens WHERE contrato_id = $1`, id).Scan(&tokenCount)
-	if tokenCount > 0 {
-		http.Error(w, "contrato possui tokens emitidos e não pode ser excluído — cancele o contrato primeiro", http.StatusConflict)
+	var tokenAtivo int
+	db.QueryRow(`SELECT COUNT(*) FROM financeiro.tokens WHERE contrato_id = $1 AND status = 'ativo'`, id).Scan(&tokenAtivo)
+	if tokenAtivo > 0 {
+		http.Error(w, "contrato possui tokens ativos — inative todos os tokens antes de excluir", http.StatusConflict)
 		return
 	}
 
