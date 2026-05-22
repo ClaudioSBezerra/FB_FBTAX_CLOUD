@@ -58,6 +58,8 @@ func ContratosHandler(db *sql.DB) http.HandlerFunc {
 			handlePostContrato(w, r, db)
 		case http.MethodPut:
 			handlePutContrato(w, r, db)
+		case http.MethodDelete:
+			handleDeleteContrato(w, r, db)
 		default:
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		}
@@ -259,4 +261,31 @@ func handlePutContrato(w http.ResponseWriter, r *http.Request, db *sql.DB) {
 		return
 	}
 	json.NewEncoder(w).Encode(map[string]string{"status": "updated"})
+}
+
+func handleDeleteContrato(w http.ResponseWriter, r *http.Request, db *sql.DB) {
+	id := r.URL.Query().Get("id")
+	if id == "" {
+		http.Error(w, "id obrigatório", http.StatusBadRequest)
+		return
+	}
+
+	var tokenCount int
+	db.QueryRow(`SELECT COUNT(*) FROM financeiro.tokens WHERE contrato_id = $1`, id).Scan(&tokenCount)
+	if tokenCount > 0 {
+		http.Error(w, "contrato possui tokens emitidos e não pode ser excluído — cancele o contrato primeiro", http.StatusConflict)
+		return
+	}
+
+	res, err := db.Exec(`DELETE FROM financeiro.contratos WHERE id = $1`, id)
+	if err != nil {
+		http.Error(w, "erro ao excluir contrato", http.StatusInternalServerError)
+		return
+	}
+	n, _ := res.RowsAffected()
+	if n == 0 {
+		http.Error(w, "contrato não encontrado", http.StatusNotFound)
+		return
+	}
+	json.NewEncoder(w).Encode(map[string]string{"status": "deleted"})
 }

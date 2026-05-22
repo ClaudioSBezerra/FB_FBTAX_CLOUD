@@ -9,7 +9,7 @@ import { Badge } from '@/components/ui/badge'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Separator } from '@/components/ui/separator'
-import { FileText, Download, Upload, CheckCircle2, Eye } from 'lucide-react'
+import { FileText, Download, Upload, CheckCircle2, Eye, Trash2 } from 'lucide-react'
 import { toast } from 'sonner'
 
 interface ClienteSimples {
@@ -305,6 +305,22 @@ export default function ContratosPage() {
     }
   }
 
+  const handleExcluirContrato = async (id: string) => {
+    if (!confirm('Excluir este contrato? Esta ação não pode ser desfeita.')) return
+    try {
+      const res = await fetch(`/api/financeiro/contratos?id=${id}`, { method: 'DELETE' })
+      if (!res.ok) {
+        const msg = await res.text()
+        throw new Error(msg)
+      }
+      toast.success('Contrato excluído')
+      fetchContratos(clienteIdFiltro)
+      if (visualizando?.id === id) setVisualizando(null)
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Erro ao excluir')
+    }
+  }
+
   return (
     <div className="min-h-screen bg-gray-50 p-8">
       <div className="max-w-4xl mx-auto space-y-6">
@@ -393,6 +409,10 @@ export default function ContratosPage() {
                               </Button>
                               <Button variant="ghost" size="sm" className="h-8 px-2 text-xs" onClick={() => handleEditarContrato(c)}>
                                 Editar
+                              </Button>
+                              <Button variant="ghost" size="sm" className="h-8 w-8 p-0 text-destructive hover:text-destructive" title="Excluir contrato"
+                                onClick={() => handleExcluirContrato(c.id)}>
+                                <Trash2 className="w-3.5 h-3.5" />
                               </Button>
                             </div>
                           </TableCell>
