@@ -11,7 +11,6 @@ import (
 	"io"
 	"math"
 	"net/http"
-	"os"
 	"strconv"
 	"time"
 
@@ -276,43 +275,27 @@ func formatarMoeda(v float64) string {
 }
 
 func logoMarcaDagua() []byte {
-	paths := []string{
-		"./static/logo-fb.png",
-		"./frontend/public/logo-fb.png",
-		"../frontend/public/logo-fb.png",
-	}
-	var raw []byte
-	for _, p := range paths {
-		b, err := os.ReadFile(p)
-		if err == nil {
-			raw = b
-			break
-		}
-	}
-	if raw == nil {
-		return nil
-	}
-	src, err := png.Decode(bytes.NewReader(raw))
+	src, err := png.Decode(bytes.NewReader(logoFBBytes))
 	if err != nil {
-		return raw
+		return nil
 	}
 	bounds := src.Bounds()
 	dst := image.NewRGBA(bounds)
 	for y := bounds.Min.Y; y < bounds.Max.Y; y++ {
 		for x := bounds.Min.X; x < bounds.Max.X; x++ {
 			r, g, b, a := src.At(x, y).RGBA()
-			// reduz alpha para ~12% — marca d'água discreta
+			// reduz alpha para 10% — marca d'água bem discreta
 			dst.SetRGBA(x, y, color.RGBA{
 				R: uint8(r >> 8),
 				G: uint8(g >> 8),
 				B: uint8(b >> 8),
-				A: uint8((a >> 8) * 12 / 100),
+				A: uint8((a >> 8) * 10 / 100),
 			})
 		}
 	}
 	var buf bytes.Buffer
 	if err := png.Encode(&buf, dst); err != nil {
-		return raw
+		return nil
 	}
 	return buf.Bytes()
 }
@@ -332,9 +315,8 @@ func gerarContratoPDF(d *ContratoDetalhe) ([]byte, error) {
 
 	// ── helpers ────────────────────────────────────────────────────────────────
 	esp := func(h float64) core.Row { return row.New(h) }
-	sep := func() core.Row {
-		return line.NewRow(3, props.Line{Style: linestyle.Dashed, SizePercent: 100, Thickness: 0.3})
-	}
+	sepLine := props.Line{Style: linestyle.Solid, SizePercent: 100, Thickness: 0.3}
+	sep := func() core.Row { return line.NewRow(3, sepLine) }
 
 	titulo := func(s string) core.Row {
 		return row.New(9).Add(col.New(12).Add(
@@ -473,7 +455,7 @@ func gerarContratoPDF(d *ContratoDetalhe) ([]byte, error) {
 		col.New(4).Add(text.New("Plano", props.Text{Size: 8.5, Style: fontstyle.Bold})),
 		col.New(3).Add(text.New("Valor Mensal (R$)", props.Text{Size: 8.5, Style: fontstyle.Bold, Align: align.Right})),
 	))
-	add(line.NewRow(1))
+	add(line.NewRow(2, sepLine))
 	for _, item := range d.Itens {
 		valorStr := "Sob consulta"
 		if item.ValorItem != nil {
@@ -485,7 +467,7 @@ func gerarContratoPDF(d *ContratoDetalhe) ([]byte, error) {
 			col.New(3).Add(text.New(valorStr, props.Text{Size: 8.5, Align: align.Right})),
 		))
 	}
-	add(line.NewRow(1), esp(5))
+	add(line.NewRow(2, sepLine), esp(5))
 
 	if len(d.CNPJs) > 0 {
 		add(para("Parágrafo único. Os serviços acima abrangem os seguintes CNPJs da CONTRATADA:", 8), esp(2))
