@@ -4,8 +4,8 @@ milestone: v1.0
 milestone_name: milestone
 status: phase_complete
 stopped_at: ~
-last_updated: "2026-05-20"
-last_activity: 2026-05-20 — Phase 1 concluída (2/2 planos, checkpoint aprovado)
+last_updated: "2026-06-02"
+last_activity: 2026-06-02 — Quick task 260602-krc: ingestão OFX no painel financeiro (3 tasks, build ok)
 progress:
   total_phases: 6
   completed_phases: 1
@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-05-19)
 Phase: 1 of 6 (Fundação do Módulo) — COMPLETA
 Plan: 2 of 2 concluídos
 Status: Phase complete — pronto para Phase 2
-Last activity: 2026-05-20 — Phase 1 concluída, checkpoint aprovado
+Last activity: 2026-06-02 — Quick task 260602-krc: ingestão OFX (handler + serviço + migration + UI)
 
 Progress: [█░░░░░░░░░] 17%
 
@@ -72,6 +72,12 @@ None yet.
 
 - Schema do módulo financeiro: decidir se usa schema separado (`financeiro.*`) ou tabelas no schema `public` — a convention do projeto usa `public` + `portal.*`; fase 1 deve definir isso
 - Role para admin Fortes Bezerra: o sistema existente usa roles em JWT; será necessário criar role específica (`fb_admin`) na fase 1
+
+### Quick Tasks Completed
+
+| # | Description | Date | Commit | Directory |
+|---|-------------|------|--------|-----------|
+| 260602-krc | ingestão OFX no painel financeiro | 2026-06-02 | 0ece098 | [260602-krc-ingest-o-ofx-no-painel-financeiro](./quick/260602-krc-ingest-o-ofx-no-painel-financeiro/) |
 
 ## Deferred Items
 
