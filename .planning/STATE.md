@@ -5,7 +5,7 @@ milestone_name: milestone
 status: phase_complete
 stopped_at: ~
 last_updated: "2026-06-02"
-last_activity: 2026-06-02 — Quick task 260602-krc: ingestão OFX no painel financeiro (3 tasks, build ok)
+last_activity: 2026-06-02 — Sessão encerrada após melhorias no painel + tag backup-2026-06-02
 progress:
   total_phases: 6
   completed_phases: 1
@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-05-19)
 Phase: 1 of 6 (Fundação do Módulo) — COMPLETA
 Plan: 2 of 2 concluídos
 Status: Phase complete — pronto para Phase 2
-Last activity: 2026-06-02 — Quick task 260602-krc: ingestão OFX (handler + serviço + migration + UI)
+Last activity: 2026-06-02 — Sessão fechada. Painel financeiro recebeu: ingestão OFX, delete de conta, chat IA flutuante com 10 sugestões estratégicas + export Excel, validação SQL robusta (EXTRACT + subqueries), botão "Voltar para nova pergunta". Backup em git tag `backup-2026-06-02` (commit 7ca796f).
 
 Progress: [█░░░░░░░░░] 17%
 
