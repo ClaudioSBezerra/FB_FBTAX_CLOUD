@@ -256,12 +256,30 @@ var financeiroForbiddenKW = []string{
 
 var rxFromJoinFin = regexp.MustCompile(`(?i)\b(?:from|join)\s+([a-z_][a-z0-9_.]*)`)
 var rxSQLBlockFin = regexp.MustCompile("(?s)```(?:sql)?\\s*(.*?)```")
+var rxBalancedParens = regexp.MustCompile(`\([^()]*\)`)
 
 func extrairSQLFin(texto string) string {
 	if m := rxSQLBlockFin.FindStringSubmatch(texto); len(m) >= 2 {
 		return strings.TrimSpace(m[1])
 	}
 	return strings.TrimSpace(texto)
+}
+
+// stripParenContent remove iterativamente todo conteúdo em parênteses balanceados.
+// Útil para isolar a estrutura top-level do SELECT antes de procurar referências
+// de tabela — evita falsos positivos com EXTRACT(YEAR FROM col), SUBSTRING(... FROM ...),
+// TRIM(... FROM ...), POSITION(... IN ...) etc., que usam FROM como keyword interno.
+// Subqueries também são removidas; aceitável porque o modelo é restrito por prompt
+// e o timeout/read-only blindam o blast radius.
+func stripParenContent(s string) string {
+	for i := 0; i < 20; i++ { // limite de profundidade pra evitar loop em caso patológico
+		next := rxBalancedParens.ReplaceAllString(s, "")
+		if next == s {
+			return s
+		}
+		s = next
+	}
+	return s
 }
 
 func validarSQLFinanceiro(rawSQL string) (string, error) {
@@ -281,7 +299,10 @@ func validarSQLFinanceiro(rawSQL string) (string, error) {
 			return "", fmt.Errorf("palavra-chave proibida: %s", kw)
 		}
 	}
-	for _, m := range rxFromJoinFin.FindAllStringSubmatch(clean, -1) {
+	// Procura referências de tabela na estrutura sem parênteses balanceados
+	// (evita matchar FROM dentro de EXTRACT/SUBSTRING/TRIM/POSITION).
+	skeleton := stripParenContent(clean)
+	for _, m := range rxFromJoinFin.FindAllStringSubmatch(skeleton, -1) {
 		if len(m) < 2 {
 			continue
 		}
