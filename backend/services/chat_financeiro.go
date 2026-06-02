@@ -148,6 +148,54 @@ WHERE tipo = 'credito'
   AND descricao ILIKE '%salario%'
   AND EXTRACT(YEAR FROM data_transacao) = EXTRACT(YEAR FROM CURRENT_DATE)
 LIMIT 1
+` + "```" + `
+
+Usuário: "Qual a média mensal de saídas nos últimos 6 meses?" (burn rate)
+` + "```sql" + `
+SELECT
+  ROUND(AVG(total_mes)::numeric, 2) AS saida_mensal_media,
+  MIN(mes) AS mes_inicio,
+  MAX(mes) AS mes_fim,
+  COUNT(*) AS meses_considerados
+FROM (
+  SELECT
+    DATE_TRUNC('month', data_transacao) AS mes,
+    SUM(valor) AS total_mes
+  FROM financeiro.transacoes
+  WHERE tipo = 'debito'
+    AND data_transacao >= DATE_TRUNC('month', CURRENT_DATE) - INTERVAL '6 months'
+    AND data_transacao <  DATE_TRUNC('month', CURRENT_DATE)
+  GROUP BY mes
+) sub
+LIMIT 1
+` + "```" + `
+
+Usuário: "Compare entradas deste mês com o mês passado"
+` + "```sql" + `
+SELECT
+  SUM(CASE WHEN DATE_TRUNC('month', data_transacao) = DATE_TRUNC('month', CURRENT_DATE)
+           THEN valor ELSE 0 END) AS entradas_mes_atual,
+  SUM(CASE WHEN DATE_TRUNC('month', data_transacao) = DATE_TRUNC('month', CURRENT_DATE - INTERVAL '1 month')
+           THEN valor ELSE 0 END) AS entradas_mes_anterior
+FROM financeiro.transacoes
+WHERE tipo = 'credito'
+  AND data_transacao >= DATE_TRUNC('month', CURRENT_DATE - INTERVAL '1 month')
+LIMIT 1
+` + "```" + `
+
+Usuário: "Top 5 favorecidos que mais recebem de mim"
+` + "```sql" + `
+SELECT
+  descricao AS favorecido,
+  COUNT(*) AS num_transacoes,
+  SUM(valor) AS total_pago,
+  ROUND(AVG(valor)::numeric, 2) AS ticket_medio
+FROM financeiro.transacoes
+WHERE tipo = 'debito'
+  AND EXTRACT(YEAR FROM data_transacao) = EXTRACT(YEAR FROM CURRENT_DATE)
+GROUP BY descricao
+ORDER BY total_pago DESC
+LIMIT 5
 ` + "```"
 
 const financeiroNarrativaPrompt = `Você é um analista financeiro pessoal. Receberá:

@@ -8,8 +8,9 @@ import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts'
-import { TrendingUp, TrendingDown, Wallet, Building2, Plus, Bot, Send, Loader2, ChevronDown, ChevronUp, Upload, Trash2 } from 'lucide-react'
+import { TrendingUp, TrendingDown, Wallet, Building2, Plus, Bot, Send, Loader2, ChevronDown, ChevronUp, Upload, Trash2, FileSpreadsheet } from 'lucide-react'
 import { toast } from 'sonner'
+import * as XLSX from 'xlsx'
 
 interface PainelData {
   saldo_total: number
@@ -70,12 +71,54 @@ interface OFXDetected {
   branchid: string
 }
 
-const SUGESTOES = [
-  'Quais foram as maiores despesas deste mês?',
-  'Total de entradas e saídas por mês em 2026',
-  'Qual meu saldo atual e resultado líquido do ano?',
-  'Gastos por categoria nos últimos 30 dias',
+const SUGESTOES: { categoria: string; perguntas: string[] }[] = [
+  {
+    categoria: 'Liquidez & Caixa',
+    perguntas: [
+      'Qual meu saldo consolidado atual em todas as contas?',
+      'Qual o resultado líquido (entradas − saídas) deste mês?',
+      'Qual a média mensal de saídas nos últimos 6 meses? (burn rate)',
+    ],
+  },
+  {
+    categoria: 'Tendências',
+    perguntas: [
+      'Total de entradas e saídas por mês em 2026',
+      'Compare entradas deste mês com o mês passado',
+      'Resultado líquido por mês neste ano',
+    ],
+  },
+  {
+    categoria: 'Composição',
+    perguntas: [
+      'Top 5 favorecidos que mais recebem de mim',
+      'Top 10 maiores despesas deste mês',
+      'Gastos por categoria nos últimos 90 dias',
+      'Quanto recebi de salário este ano?',
+    ],
+  },
 ]
+
+function slugify(s: string): string {
+  return s
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 40)
+}
+
+function exportarParaExcel(pergunta: string, columns: string[], rows: Record<string, unknown>[]) {
+  if (!columns?.length || !rows?.length) return
+  const header = columns
+  const body = rows.map(r => header.map(c => r[c] ?? ''))
+  const ws = XLSX.utils.aoa_to_sheet([header, ...body])
+  const wb = XLSX.utils.book_new()
+  XLSX.utils.book_append_sheet(wb, ws, 'Resultado')
+  const ts = new Date().toISOString().slice(0, 19).replace(/[-:T]/g, '')
+  XLSX.writeFile(wb, `painel-${slugify(pergunta) || 'consulta'}-${ts}.xlsx`)
+}
 
 // ── Chat IA ───────────────────────────────────────────────────────────────────
 function ChatIA() {
@@ -139,15 +182,24 @@ function ChatIA() {
 
         {/* Sugestões — aparecem só quando não há mensagens */}
         {msgs.length === 0 && (
-          <div className="flex flex-wrap gap-2">
-            {SUGESTOES.map(s => (
-              <button
-                key={s}
-                onClick={() => enviar(s)}
-                className="text-xs border border-violet-200 bg-violet-50 text-violet-700 rounded-full px-3 py-1 hover:bg-violet-100 transition-colors text-left"
-              >
-                {s}
-              </button>
+          <div className="space-y-3">
+            {SUGESTOES.map(grupo => (
+              <div key={grupo.categoria}>
+                <p className="text-[10px] font-semibold uppercase tracking-wide text-violet-500 mb-1.5">
+                  {grupo.categoria}
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  {grupo.perguntas.map(p => (
+                    <button
+                      key={p}
+                      onClick={() => enviar(p)}
+                      className="text-xs border border-violet-200 bg-violet-50 text-violet-700 rounded-full px-3 py-1 hover:bg-violet-100 transition-colors text-left"
+                    >
+                      {p}
+                    </button>
+                  ))}
+                </div>
+              </div>
             ))}
           </div>
         )}
@@ -199,6 +251,21 @@ function ChatIA() {
                         </p>
                       )}
                     </div>
+                  )}
+
+                  {/* Exportar para Excel */}
+                  {m.columns && m.rows && m.rows.length > 0 && (
+                    <button
+                      onClick={() => {
+                        const pergunta = msgs[i - 1]?.role === 'user' ? msgs[i - 1].content : 'consulta'
+                        exportarParaExcel(pergunta, m.columns!, m.rows!)
+                      }}
+                      className="flex items-center gap-1 text-[10px] text-emerald-700 hover:text-emerald-800 hover:bg-emerald-50 rounded px-2 py-1 border border-emerald-200 self-start transition-colors"
+                      title="Baixar resultado em .xlsx"
+                    >
+                      <FileSpreadsheet className="w-3 h-3" />
+                      Exportar Excel
+                    </button>
                   )}
 
                   {/* SQL gerado — colapsável */}
