@@ -8,7 +8,7 @@ import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts'
-import { TrendingUp, TrendingDown, Wallet, Building2, Plus, Bot, Send, Loader2, ChevronDown, ChevronUp, Upload, Trash2, FileSpreadsheet } from 'lucide-react'
+import { TrendingUp, TrendingDown, Wallet, Building2, Plus, Bot, Send, Loader2, ChevronDown, ChevronUp, Upload, Trash2, FileSpreadsheet, ArrowLeft, X } from 'lucide-react'
 import { toast } from 'sonner'
 import * as XLSX from 'xlsx'
 
@@ -120,13 +120,25 @@ function exportarParaExcel(pergunta: string, columns: string[], rows: Record<str
   XLSX.writeFile(wb, `painel-${slugify(pergunta) || 'consulta'}-${ts}.xlsx`)
 }
 
-// ── Chat IA ───────────────────────────────────────────────────────────────────
+// ── Chat IA (widget flutuante) ────────────────────────────────────────────────
 function ChatIA() {
+  const [open, setOpen] = useState(false)
   const [msgs, setMsgs] = useState<ChatMsg[]>([])
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
   const [sqlAberto, setSqlAberto] = useState<Record<number, boolean>>({})
   const bottomRef = useRef<HTMLDivElement>(null)
+  const inputRef = useRef<HTMLInputElement>(null)
+
+  useEffect(() => {
+    if (open) setTimeout(() => inputRef.current?.focus(), 50)
+  }, [open])
+
+  const voltarParaSugestoes = () => {
+    setMsgs([])
+    setInput('')
+    setSqlAberto({})
+  }
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -165,49 +177,85 @@ function ChatIA() {
   }
 
   return (
-    <Card className="border-violet-100">
-      <CardHeader className="pb-3">
-        <CardTitle className="text-sm font-semibold flex items-center gap-2">
-          <Bot className="w-4 h-4 text-violet-600" />
-          Assistente Financeiro IA
-          <Badge variant="outline" className="text-[10px] text-violet-700 border-violet-300 bg-violet-50 ml-auto">
-            GLM-4.5 · Z.AI
-          </Badge>
-        </CardTitle>
-        <CardDescription className="text-xs">
-          Faça perguntas sobre suas movimentações financeiras em linguagem natural.
-        </CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-3">
+    <>
+      {/* Botão flutuante — visível quando fechado */}
+      {!open && (
+        <button
+          onClick={() => setOpen(true)}
+          className="fixed bottom-5 right-5 z-50 flex items-center gap-2 bg-violet-600 text-white shadow-lg rounded-full pl-4 pr-5 py-3 text-sm font-medium hover:bg-violet-700 transition-all hover:scale-105 active:scale-95"
+          title="Assistente Financeiro IA"
+        >
+          <Bot className="h-5 w-5" />
+          Assistente
+        </button>
+      )}
 
-        {/* Sugestões — aparecem só quando não há mensagens */}
-        {msgs.length === 0 && (
-          <div className="space-y-3">
-            {SUGESTOES.map(grupo => (
-              <div key={grupo.categoria}>
-                <p className="text-[10px] font-semibold uppercase tracking-wide text-violet-500 mb-1.5">
-                  {grupo.categoria}
-                </p>
-                <div className="flex flex-wrap gap-2">
-                  {grupo.perguntas.map(p => (
-                    <button
-                      key={p}
-                      onClick={() => enviar(p)}
-                      className="text-xs border border-violet-200 bg-violet-50 text-violet-700 rounded-full px-3 py-1 hover:bg-violet-100 transition-colors text-left"
-                    >
-                      {p}
-                    </button>
-                  ))}
-                </div>
+      {/* Painel flutuante — visível quando aberto */}
+      {open && (
+        <div className="fixed bottom-5 right-5 z-50 flex flex-col w-[540px] max-w-[calc(100vw-2.5rem)] h-[640px] max-h-[calc(100vh-2.5rem)] bg-white border rounded-2xl shadow-2xl overflow-hidden">
+
+          {/* Cabeçalho */}
+          <div className="flex items-center justify-between px-4 py-3 bg-violet-600 text-white shrink-0">
+            <div className="flex items-center gap-2 min-w-0">
+              {msgs.length > 0 && (
+                <button
+                  onClick={voltarParaSugestoes}
+                  className="p-1 rounded hover:bg-white/20 transition-colors shrink-0"
+                  title="Voltar / nova consulta"
+                >
+                  <ArrowLeft className="h-4 w-4" />
+                </button>
+              )}
+              <Bot className="h-5 w-5 shrink-0" />
+              <div className="min-w-0">
+                <p className="text-sm font-semibold leading-tight truncate">Assistente Financeiro</p>
+                <p className="text-[10px] opacity-75 leading-tight">GLM-4.5 · Z.AI</p>
               </div>
-            ))}
+            </div>
+            <button
+              onClick={() => setOpen(false)}
+              className="flex items-center gap-1 px-2 py-1 rounded hover:bg-white/20 transition-colors text-xs font-medium shrink-0"
+              title="Sair do Assistente"
+            >
+              <X className="h-3.5 w-3.5" />
+              Sair
+            </button>
           </div>
-        )}
 
-        {/* Histórico de mensagens */}
-        {msgs.length > 0 && (
-          <div className="space-y-4 max-h-[480px] overflow-y-auto pr-1">
-            {msgs.map((m, i) => (
+          {/* Conteúdo */}
+          <div className="flex-1 overflow-y-auto p-3 space-y-3 bg-gray-50">
+
+            {/* Sugestões — quando não há mensagens */}
+            {msgs.length === 0 && (
+              <div className="space-y-3">
+                <p className="text-xs text-muted-foreground">
+                  Faça perguntas sobre suas movimentações em linguagem natural ou escolha uma sugestão:
+                </p>
+                {SUGESTOES.map(grupo => (
+                  <div key={grupo.categoria}>
+                    <p className="text-[10px] font-semibold uppercase tracking-wide text-violet-500 mb-1.5">
+                      {grupo.categoria}
+                    </p>
+                    <div className="flex flex-wrap gap-2">
+                      {grupo.perguntas.map(p => (
+                        <button
+                          key={p}
+                          onClick={() => enviar(p)}
+                          className="text-xs border border-violet-200 bg-violet-50 text-violet-700 rounded-full px-3 py-1 hover:bg-violet-100 transition-colors text-left"
+                        >
+                          {p}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Histórico de mensagens */}
+            {msgs.length > 0 && (
+              <div className="space-y-4">
+                {msgs.map((m, i) => (
               <div key={i} className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}>
                 <div className={`max-w-[85%] space-y-2 ${m.role === 'user' ? 'items-end' : 'items-start'} flex flex-col`}>
 
@@ -294,30 +342,30 @@ function ChatIA() {
               </div>
             )}
             <div ref={bottomRef} />
+              </div>
+            )}
           </div>
-        )}
 
-        {/* Input */}
-        <form
-          onSubmit={e => { e.preventDefault(); enviar(input) }}
-          className="flex gap-2 pt-1"
-        >
-          <Input
-            value={input}
-            onChange={e => setInput(e.target.value)}
-            placeholder="Ex: Quais despesas de Uber em janeiro?"
-            className="flex-1 text-sm"
-            disabled={loading}
-          />
-          <Button type="submit" size="sm" disabled={loading || !input.trim()} className="bg-violet-600 hover:bg-violet-700">
-            {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
-          </Button>
-        </form>
-        <p className="text-[10px] text-muted-foreground text-center">
-          As respostas são geradas por IA a partir dos dados reais cadastrados. Verifique valores importantes.
-        </p>
-      </CardContent>
-    </Card>
+          {/* Input */}
+          <form
+            onSubmit={e => { e.preventDefault(); enviar(input) }}
+            className="shrink-0 border-t bg-white px-3 py-2.5 flex gap-2 items-center"
+          >
+            <Input
+              ref={inputRef}
+              value={input}
+              onChange={e => setInput(e.target.value)}
+              placeholder="Pergunte sobre suas movimentações..."
+              className="flex-1 text-sm h-9"
+              disabled={loading}
+            />
+            <Button type="submit" size="sm" disabled={loading || !input.trim()} className="h-9 w-9 p-0 bg-violet-600 hover:bg-violet-700">
+              {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+            </Button>
+          </form>
+        </div>
+      )}
+    </>
   )
 }
 

@@ -313,15 +313,18 @@ func extrairSQLFin(texto string) string {
 	return strings.TrimSpace(texto)
 }
 
-// stripParenContent remove iterativamente todo conteúdo em parênteses balanceados.
-// Útil para isolar a estrutura top-level do SELECT antes de procurar referências
-// de tabela — evita falsos positivos com EXTRACT(YEAR FROM col), SUBSTRING(... FROM ...),
-// TRIM(... FROM ...), POSITION(... IN ...) etc., que usam FROM como keyword interno.
-// Subqueries também são removidas; aceitável porque o modelo é restrito por prompt
-// e o timeout/read-only blindam o blast radius.
+// stripParenContent substitui iterativamente cada conteúdo em parênteses balanceados
+// por "0" (single non-identifier char). Útil para isolar a estrutura top-level do
+// SELECT antes de procurar referências de tabela:
+//  - Evita falsos positivos com EXTRACT(YEAR FROM col), SUBSTRING(... FROM ...) etc.,
+//    que usam FROM como keyword interno.
+//  - Preserva a posição relativa do alias após subqueries: `FROM (subq) sub` vira
+//    `FROM 0 sub` e o regex `\bfrom\s+[a-z_]` NÃO casa em `0`, ignorando o alias.
+// Subqueries são "achatadas"; aceitável porque o modelo é restrito por prompt e
+// o timeout/read-only blindam o blast radius.
 func stripParenContent(s string) string {
 	for i := 0; i < 20; i++ { // limite de profundidade pra evitar loop em caso patológico
-		next := rxBalancedParens.ReplaceAllString(s, "")
+		next := rxBalancedParens.ReplaceAllString(s, "0")
 		if next == s {
 			return s
 		}
