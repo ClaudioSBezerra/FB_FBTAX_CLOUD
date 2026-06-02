@@ -14,6 +14,8 @@ require (
 )
 
 require (
+	github.com/aclindsa/ofxgo v0.1.3 // indirect
+	github.com/aclindsa/xml v0.0.0-20201125035057-bbd5c9ec99ac // indirect
 	github.com/boombuler/barcode v1.1.0 // indirect
 	github.com/clipperhouse/uax29/v2 v2.7.0 // indirect
 	github.com/f-amaral/go-async v0.3.0 // indirect
