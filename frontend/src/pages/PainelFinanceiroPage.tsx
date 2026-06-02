@@ -341,6 +341,18 @@ function ChatIA() {
                 </div>
               </div>
             )}
+            {/* Botão prominente pra voltar às sugestões, aparece após resposta da IA */}
+            {!loading && msgs[msgs.length - 1]?.role === 'assistant' && (
+              <div className="flex justify-center pt-1">
+                <button
+                  onClick={voltarParaSugestoes}
+                  className="flex items-center gap-1.5 text-xs font-medium text-violet-700 hover:text-violet-900 bg-white hover:bg-violet-50 rounded-full px-4 py-2 border border-violet-200 shadow-sm transition-colors"
+                >
+                  <ArrowLeft className="w-3.5 h-3.5" />
+                  Voltar para nova pergunta
+                </button>
+              </div>
+            )}
             <div ref={bottomRef} />
               </div>
             )}
