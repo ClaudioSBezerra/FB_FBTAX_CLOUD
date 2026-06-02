@@ -8,7 +8,7 @@ import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts'
-import { TrendingUp, TrendingDown, Wallet, Building2, Plus, ExternalLink, Info, Bot, Send, Loader2, ChevronDown, ChevronUp, RefreshCw, CheckCircle2, XCircle, Clock, Settings2 } from 'lucide-react'
+import { TrendingUp, TrendingDown, Wallet, Building2, Plus, ExternalLink, Info, Bot, Send, Loader2, ChevronDown, ChevronUp, RefreshCw, CheckCircle2, XCircle, Clock, Settings2, Upload } from 'lucide-react'
 import { toast } from 'sonner'
 
 interface PainelData {
@@ -53,6 +53,21 @@ interface ChatMsg {
   rows?: Record<string, unknown>[]
   truncado?: boolean
   erro?: string
+}
+
+interface OFXImportResult {
+  importadas: number
+  duplicadas: number
+  erros: number
+  ids_inseridos: string[]
+  conta_apelido: string
+  detalhes_erros?: { fitid: string; motivo: string }[]
+}
+
+interface OFXDetected {
+  bankid: string
+  acctid: string
+  branchid: string
 }
 
 const SUGESTOES = [
@@ -322,6 +337,51 @@ export default function PainelFinanceiroPage() {
   const [novaTx, setNovaTx] = useState({ conta_id: '', data_transacao: '', descricao: '', valor: '', tipo: 'credito', categoria: '' })
   const [submitting, setSubmitting] = useState(false)
 
+  // OFX upload states
+  const [ofxDialogOpen, setOfxDialogOpen] = useState(false)
+  const [ofx409Open, setOfx409Open] = useState(false)
+  const [ofxDetected, setOfxDetected] = useState<OFXDetected | null>(null)
+  const [ofxFile, setOfxFile] = useState<File | null>(null)
+  const [ofxContaSelecionada, setOfxContaSelecionada] = useState('')
+  const [ofxImporting, setOfxImporting] = useState(false)
+
+  const handleOFXUpload = async (file: File, contaId?: string) => {
+    setOfxImporting(true)
+    const fd = new FormData()
+    fd.append('file', file)
+    if (contaId) fd.append('conta_id', contaId)
+    try {
+      const res = await fetch('/api/financeiro/ofx/upload', { method: 'POST', body: fd })
+      if (res.status === 409) {
+        const data = await res.json()
+        setOfxDetected(data.detected)
+        setOfxFile(file)
+        setOfxDialogOpen(false)
+        setOfx409Open(true)
+        return
+      }
+      if (!res.ok) {
+        const msg = await res.text()
+        toast.error(msg || 'Erro ao importar OFX')
+        return
+      }
+      const data: OFXImportResult = await res.json()
+      setOfxDialogOpen(false)
+      setOfx409Open(false)
+      setOfxFile(null)
+      setOfxDetected(null)
+      toast.success(`${data.importadas} transação(ões) importada(s), ${data.duplicadas} duplicada(s).`)
+      if (data.erros > 0) {
+        toast.warning(`${data.erros} linha(s) ignorada(s) — verifique os detalhes.`)
+      }
+      loadAll()
+    } catch {
+      toast.error('Erro de conexão ao importar OFX')
+    } finally {
+      setOfxImporting(false)
+    }
+  }
+
   const loadAll = () => {
     Promise.all([
       fetch('/api/financeiro/painel').then(r => r.json()),
@@ -539,6 +599,9 @@ export default function PainelFinanceiroPage() {
               ))}
               <Button variant="ghost" size="sm" className="w-full text-xs" onClick={() => setModalConta(true)}>
                 <Plus className="w-3 h-3 mr-1" /> Nova conta
+              </Button>
+              <Button variant="ghost" size="sm" className="w-full text-xs" onClick={() => setOfxDialogOpen(true)}>
+                <Upload className="w-3 h-3 mr-1" /> Importar OFX
               </Button>
             </CardContent>
           </Card>
@@ -893,6 +956,96 @@ export default function PainelFinanceiroPage() {
               <Button type="submit" disabled={submitting}>{submitting ? 'Salvando...' : 'Salvar'}</Button>
             </div>
           </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── Modal: Importar OFX ── */}
+      <Dialog open={ofxDialogOpen} onOpenChange={open => { setOfxDialogOpen(open); if (!open) setOfxImporting(false) }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Importar extrato OFX</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            {ofxImporting ? (
+              <div className="flex flex-col items-center gap-3 py-6">
+                <Loader2 className="w-8 h-8 animate-spin text-violet-600" />
+                <p className="text-sm text-muted-foreground">Processando...</p>
+              </div>
+            ) : (
+              <>
+                <p className="text-sm text-muted-foreground">
+                  Selecione um arquivo <strong>.ofx</strong> exportado do seu banco.
+                  A conta será identificada automaticamente pelo código BANKID+ACCTID do arquivo.
+                </p>
+                <Input
+                  type="file"
+                  accept=".ofx,.ofc"
+                  onChange={e => {
+                    const file = e.target.files?.[0]
+                    if (file) handleOFXUpload(file)
+                  }}
+                />
+              </>
+            )}
+            <div className="flex justify-end">
+              <Button variant="outline" size="sm" onClick={() => { setOfxDialogOpen(false); setOfxImporting(false) }}>
+                Cancelar
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── Modal: Conta não identificada (409 fallback) ── */}
+      <Dialog open={ofx409Open} onOpenChange={open => { if (!open) { setOfx409Open(false); setOfxDetected(null); setOfxFile(null) } }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Conta não identificada automaticamente</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            {ofxDetected && (
+              <div className="rounded-lg bg-amber-50 border border-amber-200 p-3 text-sm text-amber-800 space-y-1">
+                <p><strong>BANKID detectado:</strong> {ofxDetected.bankid || '—'}</p>
+                <p><strong>ACCTID detectado:</strong> {ofxDetected.acctid || '—'}</p>
+                {ofxDetected.branchid && <p><strong>BRANCHID:</strong> {ofxDetected.branchid}</p>}
+              </div>
+            )}
+            <p className="text-sm text-muted-foreground">
+              Nenhuma conta cadastrada corresponde aos dados do arquivo. Escolha a conta de destino manualmente:
+            </p>
+            <select
+              className="w-full border border-input bg-background rounded-md px-3 py-2 text-sm"
+              value={ofxContaSelecionada}
+              onChange={e => setOfxContaSelecionada(e.target.value)}
+            >
+              <option value="">Selecione uma conta...</option>
+              {contas.map(c => (
+                <option key={c.id} value={c.id}>{c.apelido} — {c.banco}</option>
+              ))}
+            </select>
+            <div className="flex gap-2 justify-end">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => { setOfx409Open(false); setOfxDetected(null); setOfxFile(null) }}
+              >
+                Cancelar
+              </Button>
+              <Button
+                size="sm"
+                disabled={!ofxContaSelecionada || !ofxFile || ofxImporting}
+                onClick={() => {
+                  if (ofxFile && ofxContaSelecionada) {
+                    setOfx409Open(false)
+                    handleOFXUpload(ofxFile, ofxContaSelecionada)
+                  }
+                }}
+              >
+                {ofxImporting ? <Loader2 className="w-4 h-4 animate-spin mr-1" /> : null}
+                Importar para esta conta
+              </Button>
+            </div>
+          </div>
         </DialogContent>
       </Dialog>
 

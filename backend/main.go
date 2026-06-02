@@ -382,6 +382,7 @@ func main() {
 	http.HandleFunc("/api/financeiro/bancos/config",      withAuth(handlers.BancosConfigHandler, "admin"))
 	http.HandleFunc("/api/financeiro/bancos/sync",        withAuth(handlers.BancosSyncHandler, "admin"))
 	http.HandleFunc("/api/financeiro/bancos/providers",   withAuth(handlers.BancosProvidersHandler, "admin"))
+	http.HandleFunc("/api/financeiro/ofx/upload",         withAuth(handlers.OFXUploadHandler, "admin"))
 
 	// ── Financeiro — portal cliente (JWT role=portal_cliente) ────────────────
 	http.HandleFunc("/api/financeiro/portal/login",     withDB(handlers.PortalLoginHandler))
