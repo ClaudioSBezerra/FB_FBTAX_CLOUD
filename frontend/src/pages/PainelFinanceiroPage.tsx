@@ -8,7 +8,7 @@ import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts'
-import { TrendingUp, TrendingDown, Wallet, Building2, Plus, ExternalLink, Info, Bot, Send, Loader2, ChevronDown, ChevronUp, RefreshCw, CheckCircle2, XCircle, Clock, Settings2, Upload } from 'lucide-react'
+import { TrendingUp, TrendingDown, Wallet, Building2, Plus, ExternalLink, Bot, Send, Loader2, ChevronDown, ChevronUp, RefreshCw, CheckCircle2, XCircle, Clock, Settings2, Upload } from 'lucide-react'
 import { toast } from 'sonner'
 
 interface PainelData {
@@ -658,7 +658,7 @@ export default function PainelFinanceiroPage() {
               </Badge>
             </CardTitle>
             <CardDescription className="text-xs">
-              Extrato e saldo via OAuth2 + mTLS direto nos bancos — sem intermediários. Suporta: {providers.join(', ') || 'Inter, Itaú'}.
+              Extrato e saldo via OAuth2 + mTLS direto nos bancos — sem intermediários. Suporta: {providers.join(', ') || 'Inter'}.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-3">
@@ -775,10 +775,6 @@ export default function PainelFinanceiroPage() {
                     className="text-xs text-orange-600 hover:underline flex items-center gap-0.5">
                     Inter: developers.inter.co <ExternalLink className="w-2.5 h-2.5" />
                   </a>
-                  <a href="https://devportal.itau.com.br" target="_blank" rel="noopener noreferrer"
-                    className="text-xs text-amber-700 hover:underline flex items-center gap-0.5">
-                    Itaú: devportal.itau.com.br <ExternalLink className="w-2.5 h-2.5" />
-                  </a>
                 </div>
               </div>
             )}
@@ -787,60 +783,6 @@ export default function PainelFinanceiroPage() {
 
         {/* ── Chat IA ── */}
         <ChatIA />
-
-        {/* ── Seção Open Finance / Cumbuca ── */}
-        <Card className="border-blue-100 bg-blue-50/40">
-          <CardHeader>
-            <CardTitle className="text-sm font-semibold flex items-center gap-2">
-              <Info className="w-4 h-4 text-blue-600" />
-              Open Finance — Conexão via Cumbuca
-            </CardTitle>
-            <CardDescription>
-              Acesse saldos e extratos bancários em tempo real sem precisar de licença própria do Banco Central.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <div className="bg-white rounded-lg border p-4 space-y-1">
-                <div className="w-7 h-7 rounded-full bg-blue-100 text-blue-700 text-xs font-bold flex items-center justify-center">1</div>
-                <p className="text-sm font-medium">Contratar o Cumbuca</p>
-                <p className="text-xs text-muted-foreground">
-                  O Cumbuca é um proxy regulado pelo BACEN com licença ITP. Solicite acesso em{' '}
-                  <a href="https://www.cumbuca.com" target="_blank" rel="noopener noreferrer"
-                    className="text-blue-600 hover:underline inline-flex items-center gap-0.5">
-                    cumbuca.com <ExternalLink className="w-3 h-3" />
-                  </a>. Retorno em até 1 dia útil.
-                </p>
-              </div>
-              <div className="bg-white rounded-lg border p-4 space-y-1">
-                <div className="w-7 h-7 rounded-full bg-blue-100 text-blue-700 text-xs font-bold flex items-center justify-center">2</div>
-                <p className="text-sm font-medium">Configurar certificados mTLS</p>
-                <p className="text-xs text-muted-foreground">
-                  Após aprovação, você recebe um certificado de cliente (mTLS) e uma chave privada para assinar requisições com JWS. Configure as variáveis de ambiente <code className="bg-slate-100 px-1 rounded text-[11px]">CUMBUCA_CERT</code>, <code className="bg-slate-100 px-1 rounded text-[11px]">CUMBUCA_KEY</code> e <code className="bg-slate-100 px-1 rounded text-[11px]">CUMBUCA_HOST</code>.
-                </p>
-              </div>
-              <div className="bg-white rounded-lg border p-4 space-y-1">
-                <div className="w-7 h-7 rounded-full bg-blue-100 text-blue-700 text-xs font-bold flex items-center justify-center">3</div>
-                <p className="text-sm font-medium">Sincronização automática</p>
-                <p className="text-xs text-muted-foreground">
-                  Com as credenciais configuradas, o sistema solicita consentimento dos titulares (OAuth 2.0 / FAPI) e passa a sincronizar saldos e extratos automaticamente — as APIs são idênticas ao Open Finance oficial, só o host muda.
-                </p>
-              </div>
-            </div>
-
-            <div className="bg-white rounded-lg border border-dashed border-blue-200 p-4 flex items-center justify-between">
-              <div>
-                <p className="text-sm font-medium text-slate-700">Status da integração</p>
-                <p className="text-xs text-muted-foreground mt-0.5">
-                  Credenciais Cumbuca não configuradas. Dados financeiros são lançados manualmente.
-                </p>
-              </div>
-              <Badge variant="outline" className="text-amber-700 border-amber-300 bg-amber-50">
-                Pendente
-              </Badge>
-            </div>
-          </CardContent>
-        </Card>
 
       </div>
 
