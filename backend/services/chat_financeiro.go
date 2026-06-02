@@ -31,6 +31,11 @@ REGRAS ABSOLUTAS:
 - "este mês" → DATE_TRUNC('month', data_transacao) = DATE_TRUNC('month', CURRENT_DATE).
 - "últimos 30 dias" → data_transacao >= CURRENT_DATE - INTERVAL '30 days'.
 - Para nomes de categorias/descrições use ILIKE '%termo%' (case-insensitive).
+- Para "maior/menor X" (singular): use ORDER BY valor DESC/ASC LIMIT 1 — NÃO use MAX/MIN nem traga o oposto na mesma query.
+- Para "top N maiores/menores": use ORDER BY valor DESC/ASC LIMIT N.
+- "Maior gasto/saída" → tipo='debito' ORDER BY valor DESC LIMIT 1. "Maior entrada/recebimento" → tipo='credito' ORDER BY valor DESC LIMIT 1. "Maior valor" sem qualificar → ignora tipo, ORDER BY valor DESC LIMIT 1.
+- Valor é SEMPRE positivo; a direção (entrada/saída) está em tipo. NUNCA escreva "valor < 0".
+- Para contagem ("quantos/quantas"): use COUNT(*). Para média: AVG(valor).
 
 TABELAS DISPONÍVEIS:
 
@@ -95,6 +100,54 @@ WHERE tipo = 'debito'
 GROUP BY categoria
 ORDER BY total DESC
 LIMIT 20
+` + "```" + `
+
+Usuário: "Qual o maior valor no extrato?"
+` + "```sql" + `
+SELECT data_transacao, descricao, valor, tipo
+FROM financeiro.transacoes
+ORDER BY valor DESC
+LIMIT 1
+` + "```" + `
+
+Usuário: "Qual foi a maior saída deste mês?"
+` + "```sql" + `
+SELECT data_transacao, descricao, valor
+FROM financeiro.transacoes
+WHERE tipo = 'debito'
+  AND DATE_TRUNC('month', data_transacao) = DATE_TRUNC('month', CURRENT_DATE)
+ORDER BY valor DESC
+LIMIT 1
+` + "```" + `
+
+Usuário: "Top 5 maiores despesas do ano"
+` + "```sql" + `
+SELECT data_transacao, descricao, valor, COALESCE(categoria,'Sem categoria') AS categoria
+FROM financeiro.transacoes
+WHERE tipo = 'debito'
+  AND EXTRACT(YEAR FROM data_transacao) = EXTRACT(YEAR FROM CURRENT_DATE)
+ORDER BY valor DESC
+LIMIT 5
+` + "```" + `
+
+Usuário: "Quantos Pix enviei nos últimos 30 dias?"
+` + "```sql" + `
+SELECT COUNT(*) AS quantidade, SUM(valor) AS total
+FROM financeiro.transacoes
+WHERE tipo = 'debito'
+  AND descricao ILIKE '%pix%'
+  AND data_transacao >= CURRENT_DATE - INTERVAL '30 days'
+LIMIT 1
+` + "```" + `
+
+Usuário: "Quanto recebi de salário este ano?"
+` + "```sql" + `
+SELECT COALESCE(SUM(valor),0) AS total, COUNT(*) AS pagamentos
+FROM financeiro.transacoes
+WHERE tipo = 'credito'
+  AND descricao ILIKE '%salario%'
+  AND EXTRACT(YEAR FROM data_transacao) = EXTRACT(YEAR FROM CURRENT_DATE)
+LIMIT 1
 ` + "```"
 
 const financeiroNarrativaPrompt = `Você é um analista financeiro pessoal. Receberá:
@@ -105,9 +158,12 @@ Sua tarefa: responder diretamente à pergunta do usuário em português, usando 
 
 REGRAS:
 - Seja direto e prático — máximo 4 frases.
+- Responda APENAS o que foi perguntado. Se a pergunta foi "qual o maior", mostre só o maior — NÃO inclua o menor nem qualquer comparação que o usuário não pediu.
 - Se a pergunta envolver cálculo (parcelas, capacidade de gasto), FAÇA o cálculo com os dados e apresente o resultado.
 - Para "quantas parcelas": use saldo_total e resultado_liquido_mensal para calcular.
 - Use formatação monetária brasileira: R$ 1.234,56.
+- Para transações: cite data (DD/MM), descrição resumida e valor. Ex: "Em 27/05 você gastou R$ 735,00 com Stravaganza Padaria."
+- Lembre que o campo 'valor' é sempre positivo; o sinal de entrada/saída está em 'tipo' ('credito' = entrada, 'debito' = saída).
 - Se o resultado for vazio: informe gentilmente que não há dados para o período.
 - Não repita o JSON, não invente dados, não dê saudações.`
 

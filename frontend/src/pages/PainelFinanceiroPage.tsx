@@ -8,7 +8,7 @@ import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts'
-import { TrendingUp, TrendingDown, Wallet, Building2, Plus, Bot, Send, Loader2, ChevronDown, ChevronUp, Upload } from 'lucide-react'
+import { TrendingUp, TrendingDown, Wallet, Building2, Plus, Bot, Send, Loader2, ChevronDown, ChevronUp, Upload, Trash2 } from 'lucide-react'
 import { toast } from 'sonner'
 
 interface PainelData {
@@ -359,6 +359,26 @@ export default function PainelFinanceiroPage() {
 
   useEffect(() => { loadAll() }, [])
 
+  const handleDeleteConta = async (conta: Conta) => {
+    if (!window.confirm(`Excluir a conta "${conta.apelido}"?\n\nAs transações vinculadas ficam preservadas no banco mas a conta some do painel.`)) {
+      return
+    }
+    try {
+      const res = await fetch(`/api/financeiro/contas-financeiras?id=${encodeURIComponent(conta.id)}`, {
+        method: 'DELETE',
+      })
+      if (!res.ok && res.status !== 204) {
+        const msg = await res.text()
+        toast.error(msg || 'Erro ao excluir conta')
+        return
+      }
+      toast.success(`Conta "${conta.apelido}" excluída.`)
+      loadAll()
+    } catch {
+      toast.error('Erro de conexão ao excluir conta')
+    }
+  }
+
   const handleSaveConta = async (e: React.FormEvent) => {
     e.preventDefault()
     setSubmitting(true)
@@ -494,17 +514,28 @@ export default function PainelFinanceiroPage() {
               {contas.length === 0 ? (
                 <p className="text-sm text-muted-foreground">Nenhuma conta cadastrada.</p>
               ) : contas.map(c => (
-                <div key={c.id} className="flex items-center justify-between py-2 border-b last:border-0">
-                  <div>
-                    <p className="text-sm font-medium">{c.apelido}</p>
+                <div key={c.id} className="flex items-center justify-between py-2 border-b last:border-0 group">
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-medium truncate">{c.apelido}</p>
                     <p className="text-xs text-muted-foreground">{c.banco} · {c.tipo}</p>
                     {c.provedor && (
                       <Badge variant="outline" className="text-[10px] mt-0.5">{c.provedor}</Badge>
                     )}
                   </div>
-                  <p className={`text-sm font-semibold ${c.saldo >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
-                    {fmt(c.saldo)}
-                  </p>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <p className={`text-sm font-semibold ${c.saldo >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
+                      {fmt(c.saldo)}
+                    </p>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="h-7 w-7 p-0 opacity-0 group-hover:opacity-100 hover:bg-red-50 hover:text-red-600 transition-opacity"
+                      onClick={() => handleDeleteConta(c)}
+                      title="Excluir conta"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </Button>
+                  </div>
                 </div>
               ))}
               <Button variant="ghost" size="sm" className="w-full text-xs" onClick={() => setModalConta(true)}>

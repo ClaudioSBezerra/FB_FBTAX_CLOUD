@@ -97,6 +97,28 @@ func ContasFinanceirasHandler(db *sql.DB) http.HandlerFunc {
 			w.WriteHeader(http.StatusCreated)
 			json.NewEncoder(w).Encode(map[string]string{"id": id})
 
+		case http.MethodDelete:
+			id := r.URL.Query().Get("id")
+			if id == "" {
+				http.Error(w, "id query param required", http.StatusBadRequest)
+				return
+			}
+			res, err := db.Exec(`
+				UPDATE financeiro.contas_financeiras
+				SET ativa = false
+				WHERE id = $1 AND ativa = true
+			`, id)
+			if err != nil {
+				http.Error(w, "error deleting conta", http.StatusInternalServerError)
+				return
+			}
+			n, _ := res.RowsAffected()
+			if n == 0 {
+				http.Error(w, "conta not found or already inactive", http.StatusNotFound)
+				return
+			}
+			w.WriteHeader(http.StatusNoContent)
+
 		default:
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		}
