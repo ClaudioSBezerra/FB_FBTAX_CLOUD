@@ -78,6 +78,7 @@ None yet.
 | # | Description | Date | Commit | Directory |
 |---|-------------|------|--------|-----------|
 | 260602-krc | ingestão OFX no painel financeiro | 2026-06-02 | 0ece098 | [260602-krc-ingest-o-ofx-no-painel-financeiro](./quick/260602-krc-ingest-o-ofx-no-painel-financeiro/) |
+| 260722-n8p | tema dark glass-green no portal e logins | 2026-07-22 | a80dc31 | [260722-n8p-tema-dark-glass-green-portal-e-login](./quick/260722-n8p-tema-dark-glass-green-portal-e-login/) |
 
 ## Deferred Items
 
