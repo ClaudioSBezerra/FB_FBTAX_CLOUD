@@ -5,6 +5,7 @@ import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
 import { Alert, AlertDescription } from '@/components/ui/alert'
+import { ThemeToggle } from '@/components/ThemeToggle'
 
 export default function PortalLoginPage() {
   const [email, setEmail] = useState('')
@@ -39,10 +40,14 @@ export default function PortalLoginPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
-      <Card className="w-full max-w-sm">
+    <div className="relative min-h-screen bg-background flex items-center justify-center p-4 overflow-hidden">
+      <div className="ambient-light top-[10%] left-[10%]" aria-hidden="true" />
+      <div className="ambient-light-2 bottom-[10%] right-[10%]" aria-hidden="true" />
+      <ThemeToggle className="absolute top-4 right-4 z-10" />
+
+      <Card className="relative z-10 w-full max-w-sm glow-card">
         <CardHeader className="text-center">
-          <div className="text-xl font-bold">Fortes Bezerra</div>
+          <div className="text-xl font-bold text-glow">Fortes Bezerra</div>
           <CardTitle className="text-lg mt-1">Portal do Cliente</CardTitle>
         </CardHeader>
         <CardContent>
@@ -73,7 +78,7 @@ export default function PortalLoginPage() {
                 required
               />
             </div>
-            <Button type="submit" className="w-full" disabled={loading}>
+            <Button type="submit" className="w-full button-hover" disabled={loading}>
               {loading ? 'Entrando...' : 'Entrar'}
             </Button>
           </form>

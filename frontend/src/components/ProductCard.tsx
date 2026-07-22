@@ -9,11 +9,37 @@ export type Product = {
   contracted: boolean
 }
 
+// Cada acento tem par claro/escuro. No dark a sombra sólida "5px 5px 0" dá lugar
+// a um glow da própria cor, seguindo o design system glass-green-effect.
 const ACCENTS = [
-  { bg: 'bg-blue-50',    text: 'text-blue-700',    label: 'bg-blue-100 text-blue-700',    border: '#93c5fd', shadow: '#bfdbfe' },
-  { bg: 'bg-emerald-50', text: 'text-emerald-700',  label: 'bg-emerald-100 text-emerald-700', border: '#6ee7b7', shadow: '#a7f3d0' },
-  { bg: 'bg-violet-50',  text: 'text-violet-700',   label: 'bg-violet-100 text-violet-700',   border: '#c4b5fd', shadow: '#ddd6fe' },
-  { bg: 'bg-amber-50',   text: 'text-amber-700',    label: 'bg-amber-100 text-amber-700',     border: '#fcd34d', shadow: '#fde68a' },
+  {
+    bg: 'bg-blue-50 dark:bg-blue-500/10',
+    text: 'text-blue-700 dark:text-blue-300',
+    label: 'bg-blue-100 text-blue-700 dark:bg-blue-500/15 dark:text-blue-300',
+    border: '#93c5fd', shadow: '#bfdbfe',
+    borderDark: 'rgba(96, 165, 250, 0.35)', glowDark: 'rgba(59, 130, 246, 0.22)',
+  },
+  {
+    bg: 'bg-emerald-50 dark:bg-teal-500/10',
+    text: 'text-emerald-700 dark:text-teal-300',
+    label: 'bg-emerald-100 text-emerald-700 dark:bg-teal-500/15 dark:text-teal-300',
+    border: '#6ee7b7', shadow: '#a7f3d0',
+    borderDark: 'rgba(45, 212, 191, 0.4)', glowDark: 'rgba(20, 184, 166, 0.28)',
+  },
+  {
+    bg: 'bg-violet-50 dark:bg-violet-500/10',
+    text: 'text-violet-700 dark:text-violet-300',
+    label: 'bg-violet-100 text-violet-700 dark:bg-violet-500/15 dark:text-violet-300',
+    border: '#c4b5fd', shadow: '#ddd6fe',
+    borderDark: 'rgba(167, 139, 250, 0.35)', glowDark: 'rgba(139, 92, 246, 0.22)',
+  },
+  {
+    bg: 'bg-amber-50 dark:bg-amber-500/10',
+    text: 'text-amber-700 dark:text-amber-300',
+    label: 'bg-amber-100 text-amber-700 dark:bg-amber-500/15 dark:text-amber-300',
+    border: '#fcd34d', shadow: '#fde68a',
+    borderDark: 'rgba(251, 191, 36, 0.35)', glowDark: 'rgba(245, 158, 11, 0.2)',
+  },
 ]
 
 // Ícone por produto — imagem pública ou componente lucide
@@ -45,18 +71,18 @@ export function ProductCard({ name, description, icon_url, destination_url, colo
   const card = (
     <div
       className={`
-        relative flex flex-col h-full min-h-[220px] rounded-2xl border-2 bg-white p-5
-        transition-all duration-200
+        accent-card relative flex flex-col h-full min-h-[220px] rounded-2xl border-2 bg-card p-5
         ${hasLink
-          ? 'cursor-pointer hover:-translate-y-2 hover:-translate-x-1 group'
+          ? 'accent-card-interactive cursor-pointer hover:-translate-y-2 hover:-translate-x-1 group'
           : ''}
       `}
       style={{
-        borderColor: accent.border,
-        boxShadow: hasLink
-          ? `5px 5px 0px ${accent.shadow}`
-          : `3px 3px 0px ${accent.shadow}`,
-      }}
+        '--accent-border': accent.border,
+        '--accent-shadow': accent.shadow,
+        '--accent-border-dark': accent.borderDark,
+        '--accent-glow-dark': accent.glowDark,
+        '--accent-offset': hasLink ? '5px 5px' : '3px 3px',
+      } as React.CSSProperties}
     >
       {/* Ícone */}
       <div className={`w-16 h-16 rounded-2xl ${accent.bg} flex items-center justify-center mb-4 flex-shrink-0 overflow-hidden`}>
@@ -68,12 +94,12 @@ export function ProductCard({ name, description, icon_url, destination_url, colo
 
       {/* Conteúdo */}
       <div className="flex flex-col flex-1">
-        <h3 className="text-sm font-bold text-slate-900 mb-2 leading-snug">{name}</h3>
-        <p className="text-xs text-slate-500 leading-relaxed flex-1">{description}</p>
+        <h3 className="text-sm font-bold text-foreground mb-2 leading-snug">{name}</h3>
+        <p className="text-xs text-muted-foreground leading-relaxed flex-1">{description}</p>
       </div>
 
       {/* Rodapé */}
-      <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between">
+      <div className="mt-4 pt-3 border-t border-border flex items-center justify-between">
         {hasLink ? (
           <>
             <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${accent.label}`}>
@@ -84,7 +110,7 @@ export function ProductCard({ name, description, icon_url, destination_url, colo
             </span>
           </>
         ) : (
-          <span className="flex items-center gap-1.5 text-xs text-slate-400">
+          <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
             <Clock className="w-3 h-3" /> Em breve
           </span>
         )}

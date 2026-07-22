@@ -7,6 +7,7 @@ import { toast } from "sonner";
 import { useNavigate, Link } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { ThemeToggle } from "@/components/ThemeToggle";
 import { AlertCircle, Users, FileText, KeyRound, LayoutDashboard } from "lucide-react";
 
 const FEATURES = [
@@ -57,46 +58,43 @@ const Login = () => {
   return (
     <div className="min-h-screen flex">
 
-      {/* ── Painel esquerdo — identidade SmartPick ───────────────────────── */}
-      <div
-        className="hidden lg:flex lg:w-2/5 flex-col justify-between p-10 relative overflow-hidden"
-        style={{ background: "#0f172a" }}
-      >
-        {/* Círculos decorativos */}
-        <div className="absolute -top-24 -right-24 w-96 h-96 rounded-full pointer-events-none"
-          style={{ background: "radial-gradient(circle, #1e3a5f 0%, #0f172a 100%)" }} />
-        <div className="absolute -bottom-20 -left-20 w-64 h-64 rounded-full pointer-events-none"
-          style={{ background: "radial-gradient(circle, #162032 0%, #0f172a 100%)" }} />
+      {/* ── Painel esquerdo — identidade Fortes Bezerra ──────────────────── */}
+      <div className="hidden lg:flex lg:w-2/5 flex-col justify-between p-10 relative overflow-hidden bg-[#0f172a] dark:bg-gradient-to-br dark:from-[#0b1620] dark:to-[#0a1a2b] dark:border-r dark:border-teal-500/15">
+        {/* Círculos decorativos — no dark viram orbes teal/cyan */}
+        <div
+          className="absolute -top-24 -right-24 w-96 h-96 rounded-full pointer-events-none bg-[radial-gradient(circle,#1e3a5f_0%,#0f172a_100%)] dark:bg-none"
+          aria-hidden="true"
+        />
+        <div
+          className="absolute -bottom-20 -left-20 w-64 h-64 rounded-full pointer-events-none bg-[radial-gradient(circle,#162032_0%,#0f172a_100%)] dark:bg-none"
+          aria-hidden="true"
+        />
+        <div className="ambient-light -top-16 right-[10%]" aria-hidden="true" />
+        <div className="ambient-light-2 -bottom-32 -left-16" aria-hidden="true" />
 
         {/* ── Topo: logotipo do produto ── */}
         <div className="relative z-10">
           <div className="flex items-center gap-3 mb-12">
-            <div className="w-10 h-10 rounded-xl flex items-center justify-center font-bold text-white text-sm tracking-wide select-none"
-              style={{ background: "#2563eb" }}>
+            <div className="w-10 h-10 rounded-xl flex items-center justify-center font-bold text-white dark:text-[#0b1620] text-sm tracking-wide select-none bg-[#2563eb] dark:bg-gradient-to-br dark:from-teal-500 dark:to-cyan-400 glow-teal">
               FB
             </div>
-            <span className="text-white text-xl font-bold tracking-tight">Fortes Bezerra</span>
+            <span className="text-white text-xl font-bold tracking-tight text-glow">Fortes Bezerra</span>
           </div>
 
           {/* Badge */}
-          <span className="inline-block px-4 py-1.5 rounded-full text-sm uppercase tracking-widest font-semibold"
-            style={{
-              background: "rgba(37,99,235,0.15)",
-              color: "#93c5fd",
-              border: "1px solid rgba(37,99,235,0.3)",
-            }}>
+          <span className="inline-block px-4 py-1.5 rounded-full text-sm uppercase tracking-widest font-semibold border bg-blue-600/15 text-blue-300 border-blue-600/30 dark:bg-teal-500/15 dark:text-teal-300 dark:border-teal-400/40 backdrop-glow">
             Módulo Financeiro
           </span>
 
           {/* Título */}
-          <h1 className="text-white text-4xl font-bold leading-tight mt-5">
+          <h1 className="text-white text-4xl font-bold leading-tight mt-5 text-glow">
             Contratos e licenças
             <br />
-            <span style={{ color: "#60a5fa" }}>sob controle.</span>
+            <span className="text-blue-400 dark:text-teal-300">sob controle.</span>
           </h1>
 
           {/* Subtítulo */}
-          <p className="mt-5 text-base leading-relaxed" style={{ color: "#94a3b8" }}>
+          <p className="mt-5 text-base leading-relaxed text-slate-400">
             Gerencie clientes, contratos e tokens de acesso aos produtos FB —
             com portal de autoatendimento e rastreabilidade completa.
           </p>
@@ -106,36 +104,36 @@ const Login = () => {
         <div className="relative z-10 space-y-4">
           <ul className="space-y-3">
             {FEATURES.map(({ icon: Icon, text }) => (
-              <li key={text} className="flex items-center gap-3 text-sm" style={{ color: "#cbd5e1" }}>
-                <div className="w-6 h-6 rounded-md flex items-center justify-center shrink-0"
-                  style={{ background: "rgba(37,99,235,0.2)" }}>
-                  <Icon className="w-3.5 h-3.5" style={{ color: "#60a5fa" }} />
+              <li key={text} className="flex items-center gap-3 text-sm text-slate-300">
+                <div className="w-6 h-6 rounded-md flex items-center justify-center shrink-0 bg-blue-600/20 dark:bg-teal-500/20 dark:border dark:border-teal-400/30">
+                  <Icon className="w-3.5 h-3.5 text-blue-400 dark:text-teal-300" />
                 </div>
                 {text}
               </li>
             ))}
           </ul>
 
-          <p className="text-xs pt-2" style={{ color: "#475569" }}>
+          <p className="text-xs pt-2 text-slate-600 dark:text-slate-500">
             © {new Date().getFullYear()} Fortes Bezerra Tecnologia · FBTax Cloud
           </p>
         </div>
       </div>
 
       {/* ── Painel direito — formulário de login ─────────────────────────── */}
-      <div className="flex-1 flex items-center justify-center bg-gray-50 px-4">
+      <div className="relative flex-1 flex items-center justify-center bg-background px-4">
+        <ThemeToggle className="absolute top-4 right-4" />
+
         <div className="w-full max-w-[420px]">
 
           {/* Logo mobile (só aparece em telas pequenas) */}
           <div className="flex lg:hidden items-center justify-center gap-2 mb-8">
-            <div className="w-8 h-8 rounded-lg flex items-center justify-center font-bold text-white text-xs tracking-wide select-none"
-              style={{ background: "#2563eb" }}>
+            <div className="w-8 h-8 rounded-lg flex items-center justify-center font-bold text-white dark:text-[#0b1620] text-xs tracking-wide select-none bg-[#2563eb] dark:bg-gradient-to-br dark:from-teal-500 dark:to-cyan-400">
               FB
             </div>
-            <span className="text-lg font-bold text-gray-900">Fortes Bezerra</span>
+            <span className="text-lg font-bold text-foreground">Fortes Bezerra</span>
           </div>
 
-          <Card className="w-full shadow-md border-0">
+          <Card className="w-full shadow-md border-0 dark:border dark:border-border glow-card">
             <CardHeader className="flex flex-col items-center gap-1 space-y-0 pt-7 pb-4">
               <CardTitle className="text-base font-semibold">Acesse sua conta</CardTitle>
               <CardDescription className="text-xs">
@@ -184,11 +182,11 @@ const Login = () => {
                   </Link>
                 </div>
 
-                <Button type="submit" className="w-full text-sm" disabled={isLoading}>
+                <Button type="submit" className="w-full text-sm button-hover" disabled={isLoading}>
                   {isLoading ? "Entrando..." : "Entrar"}
                 </Button>
 
-                <p className="text-center text-xs text-gray-500 mt-1">
+                <p className="text-center text-xs text-muted-foreground mt-1">
                   Não tem uma conta?{" "}
                   <Link to="/register" className="text-primary hover:underline">
                     Crie grátis
