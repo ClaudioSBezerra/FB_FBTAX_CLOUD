@@ -1,7 +1,7 @@
 package main
 
 // FBTAX_CLOUD — Portal Hub fbtax.cloud
-// Version: 1.0.0
+// Version: 1.1.0
 import (
 	"context"
 	"database/sql"
@@ -25,7 +25,7 @@ import (
 )
 
 const (
-	BackendVersion = "1.0.0"
+	BackendVersion = "1.1.0"
 	FeatureSet     = "FBTAX_CLOUD — Portal Hub"
 )
 

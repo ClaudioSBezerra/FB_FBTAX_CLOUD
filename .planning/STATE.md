@@ -4,8 +4,8 @@ milestone: v1.0
 milestone_name: milestone
 status: phase_complete
 stopped_at: ~
-last_updated: "2026-06-02"
-last_activity: 2026-06-02 — Sessão encerrada após melhorias no painel + tag backup-2026-06-02
+last_updated: "2026-07-22"
+last_activity: 2026-07-22 — Tema dark glass-green no portal e logins, deployado em produção; release v1.1.0
 progress:
   total_phases: 6
   completed_phases: 1
