@@ -5,6 +5,20 @@
     <link rel="icon" type="image/png" href="/logo.png" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>FBTax Cloud — Soluções inteligentes para sua empresa</title>
+    <script>
+      // Aplica o tema antes do primeiro paint para evitar flash branco.
+      // Espelha a lógica do next-themes (mesma chave 'theme', padrão escuro).
+      (function () {
+        try {
+          var stored = localStorage.getItem('theme') || 'dark'
+          var theme = stored === 'system'
+            ? (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light')
+            : stored
+          document.documentElement.classList.add(theme)
+          document.documentElement.style.colorScheme = theme
+        } catch (e) {}
+      })()
+    </script>
   </head>
   <body>
     <div id="root"></div>
