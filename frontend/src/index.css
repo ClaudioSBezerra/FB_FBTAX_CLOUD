@@ -61,41 +61,222 @@
     --sidebar-ring: 2 80% 50%;
   }
 
+  /* Tema escuro — "glass green effect": navy profundo + acento teal/cyan.
+     O tema claro acima mantém o vermelho Fortes Bezerra; o teal vive só aqui. */
   .dark {
-    --background: 222 47% 6%;
-    --foreground: 210 40% 98%;
+    /* #0a1a2b — fundo da página */
+    --background: 211 62% 10%;
+    /* slate-100 */
+    --foreground: 210 40% 96%;
 
-    --card: 222 47% 8%;
-    --card-foreground: 210 40% 98%;
+    /* #0e1a2a — superfície de card */
+    --card: 214 50% 11%;
+    --card-foreground: 210 40% 96%;
 
-    --popover: 222 47% 8%;
-    --popover-foreground: 210 40% 98%;
+    /* #142033 — painel elevado */
+    --popover: 217 44% 14%;
+    --popover-foreground: 210 40% 96%;
 
-    --primary: 2 80% 55%;
-    --primary-foreground: 0 0% 100%;
+    /* teal-500 #14b8a6 — texto escuro por cima para contraste AA */
+    --primary: 173 80% 40%;
+    --primary-foreground: 211 62% 10%;
 
-    --secondary: 217 33% 17%;
-    --secondary-foreground: 210 40% 98%;
+    --secondary: 217 44% 14%;
+    --secondary-foreground: 210 40% 96%;
 
-    --muted: 217 33% 17%;
+    --muted: 217 44% 14%;
+    /* slate-400 */
     --muted-foreground: 215 20% 65%;
 
-    --accent: 142 76% 36%;
-    --accent-foreground: 0 0% 100%;
+    /* cyan-500 #06b6d4 — segunda parada do gradiente da referência */
+    --accent: 189 94% 43%;
+    --accent-foreground: 211 62% 10%;
 
-    --destructive: 0 63% 31%;
-    --destructive-foreground: 210 40% 98%;
+    --destructive: 0 72% 51%;
+    --destructive-foreground: 0 0% 100%;
 
-    --border: 217 33% 17%;
-    --input: 217 33% 17%;
-    --ring: 2 80% 55%;
+    /* aproximação sólida de rgba(255,255,255,0.1) sobre o navy */
+    --border: 215 25% 20%;
+    --input: 215 25% 20%;
+    --ring: 173 80% 40%;
 
-    --success: 142 76% 36%;
-    --success-foreground: 0 0% 100%;
+    --success: 160 84% 39%;
+    --success-foreground: 211 62% 10%;
     --warning: 38 92% 50%;
-    --warning-foreground: 0 0% 100%;
-    --info: 199 89% 48%;
-    --info-foreground: 0 0% 100%;
+    --warning-foreground: 211 62% 10%;
+    --info: 189 94% 43%;
+    --info-foreground: 211 62% 10%;
+
+    /* Gradiente de fundo da referência (#0b1620 → #0a1a2b) */
+    --page-gradient: linear-gradient(135deg, hsl(209 49% 8%), hsl(211 62% 10%));
+  }
+}
+
+@layer components {
+  /* Card de produto do portal. As cores do acento chegam como custom properties
+     setadas no próprio elemento, para que a regra `.dark` consiga sobrescrever —
+     o que um `style` inline não permitiria. */
+  .accent-card {
+    border-color: var(--accent-border);
+    box-shadow: var(--accent-offset) 0 var(--accent-shadow);
+    transition:
+      transform 0.2s cubic-bezier(0.4, 0, 0.2, 1),
+      box-shadow 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+  .dark .accent-card {
+    border-color: var(--accent-border-dark);
+    box-shadow:
+      0 8px 32px rgba(0, 0, 0, 0.35),
+      0 0 0 1px rgba(255, 255, 255, 0.05),
+      0 0 24px var(--accent-glow-dark);
+  }
+  .dark .accent-card-interactive:hover {
+    box-shadow:
+      0 20px 60px rgba(0, 0, 0, 0.45),
+      0 0 0 1px rgba(255, 255, 255, 0.1),
+      0 0 48px var(--accent-glow-dark);
+  }
+}
+
+/* ── Efeitos glass / glow (portados de glass-green-effect) ──────────────────
+   Todos os glows são escopados em `.dark` — no tema claro viram no-op para não
+   vazar teal por cima da identidade vermelha Fortes Bezerra. */
+@layer utilities {
+  .backdrop-glow {
+    backdrop-filter: blur(20px) saturate(180%);
+    -webkit-backdrop-filter: blur(20px) saturate(180%);
+  }
+
+  .dark .glow-teal {
+    box-shadow:
+      0 0 20px rgba(20, 184, 166, 0.3),
+      0 0 40px rgba(20, 184, 166, 0.1);
+  }
+
+  .glow-card {
+    transition:
+      box-shadow 0.4s cubic-bezier(0.4, 0, 0.2, 1),
+      transform 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+  .dark .glow-card {
+    box-shadow:
+      0 8px 32px rgba(0, 0, 0, 0.3),
+      0 0 0 1px rgba(255, 255, 255, 0.05);
+  }
+  .dark .glow-card:hover {
+    transform: translateY(-6px);
+    box-shadow:
+      0 25px 80px rgba(0, 0, 0, 0.4),
+      0 0 0 1px rgba(255, 255, 255, 0.1),
+      0 0 60px rgba(20, 184, 166, 0.2);
+  }
+
+  .glow-border {
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+  .dark .glow-border {
+    border-color: rgba(20, 184, 166, 0.3);
+  }
+  .dark .glow-border:hover {
+    border-color: rgba(20, 184, 166, 0.6);
+    box-shadow: 0 0 20px rgba(20, 184, 166, 0.3);
+  }
+
+  .hover-lift {
+    transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+  .hover-lift:hover {
+    transform: translateY(-4px) scale(1.02);
+  }
+
+  .hover-float {
+    transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+  .hover-float:hover {
+    transform: translateY(-6px);
+  }
+  .dark .hover-float:hover {
+    filter: drop-shadow(0 10px 30px rgba(20, 184, 166, 0.2));
+  }
+
+  /* Varredura de brilho atravessando o botão no hover */
+  .button-hover {
+    position: relative;
+    overflow: hidden;
+    transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+  .button-hover::before {
+    content: '';
+    position: absolute;
+    inset: 0 auto 0 -100%;
+    width: 100%;
+    background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.2), transparent);
+    transition: left 0.5s;
+    pointer-events: none;
+  }
+  .button-hover:hover::before {
+    left: 100%;
+  }
+  .button-hover:hover {
+    transform: translateY(-2px);
+  }
+
+  .dark .text-glow {
+    text-shadow: 0 0 20px rgba(20, 184, 166, 0.4);
+  }
+
+  /* Orbes de luz ambiente — decorativos, o pai precisa de position + overflow-hidden */
+  .ambient-light,
+  .ambient-light-2 {
+    position: absolute;
+    border-radius: 9999px;
+    pointer-events: none;
+    z-index: 0;
+    opacity: 0;
+  }
+  .dark .ambient-light {
+    width: 300px;
+    height: 300px;
+    background: radial-gradient(circle, rgba(20, 184, 166, 0.18) 0%, transparent 70%);
+    filter: blur(40px);
+    opacity: 1;
+    animation: ambientMove 8s ease-in-out infinite alternate;
+  }
+  .dark .ambient-light-2 {
+    width: 400px;
+    height: 400px;
+    background: radial-gradient(circle, rgba(6, 182, 212, 0.14) 0%, transparent 70%);
+    filter: blur(60px);
+    opacity: 1;
+    animation: ambientMove2 10s ease-in-out infinite alternate;
+  }
+
+  @keyframes ambientMove {
+    0%, 100% { transform: translate(0, 0) scale(1); }
+    50% { transform: translate(80px, -40px) scale(1.1); }
+  }
+  @keyframes ambientMove2 {
+    0%, 100% { transform: translate(0, 0) scale(1); }
+    50% { transform: translate(-60px, 50px) scale(0.9); }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .dark .ambient-light,
+    .dark .ambient-light-2 {
+      animation: none;
+    }
+    .glow-card,
+    .hover-lift,
+    .hover-float,
+    .button-hover {
+      transition: none;
+    }
+    .dark .glow-card:hover,
+    .hover-lift:hover,
+    .hover-float:hover,
+    .button-hover:hover {
+      transform: none;
+    }
   }
 }
 
