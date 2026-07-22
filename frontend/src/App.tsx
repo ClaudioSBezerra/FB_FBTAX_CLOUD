@@ -15,6 +15,7 @@ import PortalClientesAdminPage from './pages/PortalClientesAdminPage'
 import PortalLoginPage from './pages/PortalLoginPage'
 import PortalDashboardPage from './pages/PortalDashboardPage'
 import FinanceiroLayout from './components/FinanceiroLayout'
+import { LightThemeScope } from './components/LightThemeScope'
 import { AuthProvider, useAuth } from './contexts/AuthContext'
 import { Button } from '@/components/ui/button'
 
@@ -24,7 +25,8 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { isAuthenticated, loading } = useAuth()
   if (loading) return null
   if (!isAuthenticated) return <Navigate to="/admin/login" replace />
-  return <>{children}</>
+  // Telas ainda não retemadas — ver LightThemeScope
+  return <LightThemeScope>{children}</LightThemeScope>
 }
 
 function FinanceiroRoute({ children }: { children: React.ReactNode }) {
@@ -96,7 +98,9 @@ function App() {
 
             {/* Portal do cliente (auth própria) */}
             <Route path="/portal/login" element={<PortalLoginPage />} />
-            <Route path="/portal/dashboard" element={<PortalDashboardPage />} />
+            <Route path="/portal/dashboard" element={
+              <LightThemeScope><PortalDashboardPage /></LightThemeScope>
+            } />
 
             {/* Fallback */}
             <Route path="*" element={<Navigate to="/" replace />} />
