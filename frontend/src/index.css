@@ -225,6 +225,13 @@
     text-shadow: 0 0 20px rgba(20, 184, 166, 0.4);
   }
 
+  /* O cursor nativo dá lugar ao GlowCursor. A classe só existe enquanto o
+     componente está ativo, então o cursor volta sozinho no claro/mobile. */
+  body.glow-cursor-active,
+  body.glow-cursor-active * {
+    cursor: none;
+  }
+
   /* Orbes de luz ambiente — decorativos, o pai precisa de position + overflow-hidden */
   .ambient-light,
   .ambient-light-2 {

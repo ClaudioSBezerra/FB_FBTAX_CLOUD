@@ -16,6 +16,7 @@ import PortalLoginPage from './pages/PortalLoginPage'
 import PortalDashboardPage from './pages/PortalDashboardPage'
 import FinanceiroLayout from './components/FinanceiroLayout'
 import { LightThemeScope } from './components/LightThemeScope'
+import { GlowCursor } from './components/GlowCursor'
 import { AuthProvider, useAuth } from './contexts/AuthContext'
 import { Button } from '@/components/ui/button'
 
@@ -106,6 +107,8 @@ function App() {
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
           <Toaster />
+          {/* Só se manifesta no tema escuro — ver GlowCursor */}
+          <GlowCursor />
         </AuthProvider>
       </BrowserRouter>
     </QueryClientProvider>
