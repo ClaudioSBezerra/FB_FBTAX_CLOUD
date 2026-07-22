@@ -65,12 +65,31 @@ hidratação.
   - `/admin` com tema global dark — renderiza claro, botão vermelho FB preservado
     (guard confirmado).
 
+## Adendo — cursor com rastro (commit c4e2d0b)
+
+Pedido do usuário depois da entrega inicial. Eu havia cortado o cursor da
+referência por conta própria; foi reincorporado em `GlowCursor.tsx`.
+
+Duas mudanças em relação ao original, por robustez: `transform` no lugar de
+`left`/`top` (20 elementos por frame via propriedades de layout forçam reflow)
+e delegação de eventos no lugar de `querySelectorAll` na montagem (o original
+pressupõe página estática; aqui o conteúdo muda a cada render do React).
+
+Ativa só em tema escuro + ponteiro fino + viewport md+, e respeita
+`prefers-reduced-motion`.
+
+Validado por CDP com `Input.dispatchMouseEvent` — screenshot confirma rastro
+esticado em movimento e anel ampliado sobre card. Chrome headless reporta
+`pointer: none` e o CDP não emula essa media feature, então o teste faz
+monkey-patch de `matchMedia`; o código de produção não foi afetado.
+
 ## Não feito (fora do escopo)
 
 - Módulo financeiro (`/admin/financeiro/*`) e painel FBTax seguem só no claro.
   Quando forem retemados, remover `LightThemeScope` de `App.tsx`.
 - `PortalDashboardPage` também está sob o guard.
-- Cursor customizado e hover 3D da referência: deliberadamente não portados.
+- Hover 3D (`rotateX`/`rotateY`) da referência: não portado — num app de gestão
+  com grids longos, atrapalha a leitura.
 
 ## Deploy
 
