@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="720" height="176" viewBox="0 0 720 176" role="img" aria-label="FBTECH e IA">
+  <rect x="0" y="0" width="720" height="176" rx="24" fill="#0B1620"/>
+  <rect x="16" y="32" width="112" height="112" rx="30" fill="#14B8A6"/>
+  <text x="72" y="112" text-anchor="middle" font-family="Segoe UI, Helvetica Neue, Arial, sans-serif" font-weight="800" font-size="58" letter-spacing="-2" fill="#0B1620">FB</text>
+  <text x="156" y="112" font-family="Segoe UI, Helvetica Neue, Arial, sans-serif" font-weight="800" font-size="68" letter-spacing="-1"><tspan fill="#F1F5F9">FB</tspan><tspan fill="#14B8A6">TECH &amp; IA</tspan></text>
+</svg>
