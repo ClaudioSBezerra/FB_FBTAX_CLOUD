@@ -1,51 +1,38 @@
 package handlers
 
 import (
-	"bytes"
 	"database/sql"
 	"encoding/json"
 	"fmt"
-	"image"
-	"image/color"
-	"image/png"
 	"io"
 	"math"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
-	"github.com/johnfercher/maroto/v2"
-	"github.com/johnfercher/maroto/v2/pkg/components/col"
-	mimage "github.com/johnfercher/maroto/v2/pkg/components/image"
-	"github.com/johnfercher/maroto/v2/pkg/components/line"
-	"github.com/johnfercher/maroto/v2/pkg/components/row"
-	"github.com/johnfercher/maroto/v2/pkg/components/text"
-	"github.com/johnfercher/maroto/v2/pkg/config"
 	"github.com/johnfercher/maroto/v2/pkg/consts/align"
-	"github.com/johnfercher/maroto/v2/pkg/consts/extension"
-	"github.com/johnfercher/maroto/v2/pkg/consts/fontstyle"
-	"github.com/johnfercher/maroto/v2/pkg/consts/linestyle"
-	"github.com/johnfercher/maroto/v2/pkg/core"
-	"github.com/johnfercher/maroto/v2/pkg/props"
+
+	"fb_cloud/services"
 )
 
 // ── Estruturas de detalhe do contrato ────────────────────────────────────────
 
 type ContratoDetalhe struct {
-	ID            string             `json:"id"`
-	Numero        string             `json:"numero"`
-	DataInicio    string             `json:"data_inicio"`
-	Periodicidade string             `json:"periodicidade"`
-	ValorTotal    float64            `json:"valor_total"`
-	Status        string             `json:"status"`
-	Observacoes   string             `json:"observacoes"`
-	CriadoEm      string             `json:"criado_em"`
-	AssinadoEm    *string            `json:"assinado_em"`
-	AssinadoNome  *string            `json:"assinado_nome"`
-	Cliente       ContratoCliente    `json:"cliente"`
-	Empresa       ContratoEmpresa    `json:"empresa"`
-	CNPJs         []ContratoCNPJ     `json:"cnpjs"`
-	Itens         []ContratoItem     `json:"itens"`
+	ID            string          `json:"id"`
+	Numero        string          `json:"numero"`
+	DataInicio    string          `json:"data_inicio"`
+	Periodicidade string          `json:"periodicidade"`
+	ValorTotal    float64         `json:"valor_total"`
+	Status        string          `json:"status"`
+	Observacoes   string          `json:"observacoes"`
+	CriadoEm      string          `json:"criado_em"`
+	AssinadoEm    *string         `json:"assinado_em"`
+	AssinadoNome  *string         `json:"assinado_nome"`
+	Cliente       ContratoCliente `json:"cliente"`
+	Empresa       ContratoEmpresa `json:"empresa"`
+	CNPJs         []ContratoCNPJ  `json:"cnpjs"`
+	Itens         []ContratoItem  `json:"itens"`
 }
 
 type ContratoCliente struct {
@@ -61,13 +48,13 @@ type ContratoCliente struct {
 }
 
 type ContratoEmpresa struct {
-	RazaoSocial   string `json:"razao_social"`
-	NomeFantasia  string `json:"nome_fantasia"`
-	CNPJ          string `json:"cnpj"`
-	Logradouro    string `json:"logradouro"`
-	Numero        string `json:"numero"`
-	Municipio     string `json:"municipio"`
-	UF            string `json:"uf"`
+	RazaoSocial  string `json:"razao_social"`
+	NomeFantasia string `json:"nome_fantasia"`
+	CNPJ         string `json:"cnpj"`
+	Logradouro   string `json:"logradouro"`
+	Numero       string `json:"numero"`
+	Municipio    string `json:"municipio"`
+	UF           string `json:"uf"`
 }
 
 type ContratoCNPJ struct {
@@ -291,90 +278,17 @@ func formatarMoeda(v float64) string {
 	return fmt.Sprintf("R$ %s,%02d", string(result), dec)
 }
 
-// logoParaCabecalho remove o fundo escuro do PNG, mantém o símbolo da marca
-// e intensifica levemente as cores para melhor contraste no PDF.
-func logoParaCabecalho() []byte {
-	src, err := png.Decode(bytes.NewReader(logoFBBytes))
-	if err != nil {
-		return nil
-	}
-	boost := func(v uint32) uint8 {
-		val := float64(v>>8) * 1.55
-		if val > 255 {
-			val = 255
-		}
-		return uint8(val)
-	}
-	bounds := src.Bounds()
-	dst := image.NewRGBA(bounds)
-	for y := bounds.Min.Y; y < bounds.Max.Y; y++ {
-		for x := bounds.Min.X; x < bounds.Max.X; x++ {
-			r, g, b, _ := src.At(x, y).RGBA() // valores 0-65535
-			lum := (r + g + b) / 3
-			if lum < 20000 { // fundo escuro → transparente
-				dst.SetRGBA(x, y, color.RGBA{})
-			} else {
-				// símbolo → cor com boost de 25%
-				dst.SetRGBA(x, y, color.RGBA{
-					R: boost(r),
-					G: boost(g),
-					B: boost(b),
-					A: 255,
-				})
-			}
-		}
-	}
-	var buf bytes.Buffer
-	if err := png.Encode(&buf, dst); err != nil {
-		return nil
-	}
-	return buf.Bytes()
-}
-
+// gerarContratoPDF monta o Contrato de Prestação de Serviços no Padrão de
+// Documentos FBTECH (services/fbdoc.go).
+//
+// As cláusulas conservam a numeração própria do instrumento ("CLÁUSULA 1ª"),
+// por isso são abertas com Bloco e não com Secao: a numeração automática do kit
+// duplicaria a que já consta do texto jurídico.
 func gerarContratoPDF(d *ContratoDetalhe) ([]byte, error) {
-	mrt := maroto.New(config.NewBuilder().
-		WithLeftMargin(18).
-		WithRightMargin(18).
-		WithTopMargin(12).
-		Build())
-	add := func(rs ...core.Row) { mrt.AddRows(rs...) }
-
-	// ── helpers ────────────────────────────────────────────────────────────────
-	esp := func(h float64) core.Row { return row.New(h) }
-	sepLine := props.Line{Style: linestyle.Solid, SizePercent: 100, Thickness: 0.3}
-	sep := func() core.Row { return line.NewRow(3, sepLine) }
-
-	titulo := func(s string) core.Row {
-		return row.New(9).Add(col.New(12).Add(
-			text.New(s, props.Text{Size: 11, Style: fontstyle.Bold, Align: align.Center}),
-		))
-	}
-	clausulaTitulo := func(s string) core.Row {
-		return row.New(7).Add(col.New(12).Add(
-			text.New(s, props.Text{Size: 9, Style: fontstyle.Bold, Align: align.Left}),
-		))
-	}
-	para := func(s string, h float64) core.Row {
-		return row.New(h).Add(col.New(12).Add(
-			text.New(s, props.Text{Size: 8.5, Align: align.Left}),
-		))
-	}
-	campo := func(label, valor string) core.Row {
-		return row.New(5.5).Add(
-			col.New(4).Add(text.New(label, props.Text{Size: 8.5, Style: fontstyle.Bold})),
-			col.New(8).Add(text.New(valor, props.Text{Size: 8.5})),
-		)
-	}
-	rodapeTexto := func(s string) core.Row {
-		return row.New(5).Add(col.New(12).Add(
-			text.New(s, props.Text{Size: 7.5, Align: align.Center}),
-		))
-	}
-
 	// ── dados da empresa (fallback) ───────────────────────────────────────────
 	nomeEmpresa := d.Empresa.RazaoSocial
 	if nomeEmpresa == "" {
-		nomeEmpresa = "FORTES BEZERRA TECNOLOGIA LTDA"
+		nomeEmpresa = "FORTES BEZERRA TECNOLOGIA E CONSULTORIA LTDA"
 	}
 	cnpjEmpresa := formatarCNPJ(d.Empresa.CNPJ)
 	if cnpjEmpresa == "" {
@@ -384,11 +298,11 @@ func gerarContratoPDF(d *ContratoDetalhe) ([]byte, error) {
 	if d.Empresa.Logradouro != "" {
 		endEmpresa = fmt.Sprintf("%s, nº %s, %s/%s", d.Empresa.Logradouro, d.Empresa.Numero, d.Empresa.Municipio, d.Empresa.UF)
 	} else {
-		endEmpresa = "Aparecida de Goiania - GO"
+		endEmpresa = "Aparecida de Goiânia - GO"
 	}
 	municipioEmpresa := d.Empresa.Municipio
 	if municipioEmpresa == "" {
-		municipioEmpresa = "Aparecida de Goiania"
+		municipioEmpresa = "Aparecida de Goiânia"
 	}
 	ufEmpresa := d.Empresa.UF
 	if ufEmpresa == "" {
@@ -410,44 +324,35 @@ func gerarContratoPDF(d *ContratoDetalhe) ([]byte, error) {
 		endCliente = fmt.Sprintf("%s/%s", d.Cliente.Municipio, d.Cliente.UF)
 	}
 
-	// ── CABEÇALHO (repetido em todas as páginas) ──────────────────────────────
-	logoBytes := logoParaCabecalho()
-	var logoCol core.Col
-	if logoBytes != nil {
-		logoCol = col.New(2).Add(mimage.NewFromBytes(logoBytes, extension.Png, props.Rect{Percent: 95, Left: 0}))
-	} else {
-		logoCol = col.New(2)
+	dataDoc, ok := parseData(d.DataInicio)
+	if !ok {
+		dataDoc = time.Now()
 	}
-	mrt.RegisterHeader(
-		row.New(16).Add(
-			logoCol,
-			col.New(6).Add(text.New(nomeEmpresa, props.Text{Size: 13, Style: fontstyle.Bold, Align: align.Left, Top: 3})),
-			col.New(4).Add(text.New(fmt.Sprintf("Nº %s", d.Numero), props.Text{Size: 9, Align: align.Right, Style: fontstyle.Bold, Top: 3})),
-		),
-		row.New(6).Add(col.New(12).Add(
-			text.New("FbTax Cloud - Soluções Inteligentes", props.Text{Size: 9.5, Align: align.Left}),
-		)),
-		esp(3),
-		sep(),
-		esp(4),
-	)
+	cidade := municipioEmpresa + " – " + ufEmpresa
 
-	// ── TÍTULO ────────────────────────────────────────────────────────────────
-	add(
-		titulo("CONTRATO DE PRESTAÇÃO DE SERVIÇOS DE TECNOLOGIA"),
-		esp(6),
-	)
+	doc := services.NovoDoc(services.DocMeta{
+		Sigla:        "CT",
+		Numero:       strings.TrimPrefix(d.Numero, "FB-"),
+		Versao:       "1.0",
+		Titulo:       "Contrato de Prestação de Serviços de Tecnologia",
+		Subtitulo:    d.Cliente.RazaoSocial,
+		Cliente:      d.Cliente.RazaoSocial,
+		Cidade:       cidade,
+		Data:         dataDoc,
+		Emitente:     nomeEmpresa,
+		EmitCNPJ:     cnpjEmpresa,
+		Confidencial: true,
+	})
+
+	doc.Capa()
 
 	// ── PREÂMBULO ─────────────────────────────────────────────────────────────
-	add(
-		para(fmt.Sprintf(
-			"%s, pessoa jurídica de direito privado, inscrita no CNPJ sob o nº %s, com sede na %s, doravante denominada simplesmente CONTRATANTE;",
-			nomeEmpresa, cnpjEmpresa, endEmpresa,
-		), 18),
-		esp(2),
-		para("E", 4),
-		esp(2),
-	)
+	doc.Bloco("QUALIFICAÇÃO DAS PARTES")
+	doc.Paragrafo(fmt.Sprintf(
+		"%s, pessoa jurídica de direito privado, inscrita no CNPJ sob o nº %s, com sede na %s, doravante denominada simplesmente CONTRATANTE;",
+		nomeEmpresa, cnpjEmpresa, endEmpresa,
+	))
+	doc.Paragrafo("E")
 
 	clienteDesc := d.Cliente.RazaoSocial
 	if cnpjCliente != "" {
@@ -457,226 +362,112 @@ func gerarContratoPDF(d *ContratoDetalhe) ([]byte, error) {
 		clienteDesc += fmt.Sprintf(", com sede na %s", endCliente)
 	}
 	clienteDesc += ", doravante denominada simplesmente CONTRATADA;"
-
-	add(
-		para(clienteDesc, 22),
-		esp(3),
-		para("As partes acima qualificadas, em conjunto denominadas PARTES, têm entre si justo e acordado o presente Contrato de Prestação de Serviços de Tecnologia, que se regerá pelas cláusulas e condições a seguir estipuladas.", 14),
-		esp(6),
-		sep(),
-		esp(5),
-	)
+	doc.Paragrafo(clienteDesc)
+	doc.Paragrafo("As partes acima qualificadas, em conjunto denominadas PARTES, têm entre si justo e acordado o presente Contrato de Prestação de Serviços de Tecnologia, que se regerá pelas cláusulas e condições a seguir estipuladas.")
 
 	// ── CLÁUSULA 1ª ───────────────────────────────────────────────────────────
-	add(
-		clausulaTitulo("CLÁUSULA 1ª – DO OBJETO"),
-		esp(2),
-		para(`O presente Contrato tem por objeto a prestação de serviços de tecnologia pela CONTRATANTE à CONTRATADA, consistindo no acesso e utilização dos sistemas e plataformas digitais integrantes do ecossistema da Fortes Bezerra Tecnologia, nos termos e condições estabelecidos neste instrumento.`, 18),
-		esp(5),
-	)
+	doc.Bloco("CLÁUSULA 1ª – DO OBJETO")
+	doc.Paragrafo("O presente Contrato tem por objeto a prestação de serviços de tecnologia pela CONTRATANTE à CONTRATADA, consistindo no acesso e utilização dos sistemas e plataformas digitais integrantes do ecossistema da Fortes Bezerra Tecnologia, nos termos e condições estabelecidos neste instrumento.")
 
 	// ── CLÁUSULA 2ª ───────────────────────────────────────────────────────────
-	add(
-		clausulaTitulo("CLÁUSULA 2ª – DOS SERVIÇOS CONTRATADOS"),
-		esp(2),
-		para("Os serviços objeto deste Contrato compreendem o acesso às seguintes soluções e respectivos planos:", 10),
-		esp(2),
-	)
+	doc.Bloco("CLÁUSULA 2ª – DOS SERVIÇOS CONTRATADOS")
+	doc.Paragrafo("Os serviços objeto deste Contrato compreendem o acesso às seguintes soluções e respectivos planos:")
 
-	// tabela de produtos
-	add(row.New(6).Add(
-		col.New(5).Add(text.New("Produto / Solução", props.Text{Size: 8.5, Style: fontstyle.Bold})),
-		col.New(4).Add(text.New("Plano", props.Text{Size: 8.5, Style: fontstyle.Bold})),
-		col.New(3).Add(text.New("Valor Mensal (R$)", props.Text{Size: 8.5, Style: fontstyle.Bold, Align: align.Right})),
-	))
-	add(line.NewRow(2, sepLine))
+	linhasItens := make([][]string, 0, len(d.Itens))
 	for _, item := range d.Itens {
 		valorStr := "Sob consulta"
 		if item.ValorItem != nil {
 			valorStr = formatarMoeda(*item.ValorItem)
 		}
-		add(row.New(5.5).Add(
-			col.New(5).Add(text.New(item.Produto, props.Text{Size: 8.5})),
-			col.New(4).Add(text.New(item.Plano, props.Text{Size: 8.5})),
-			col.New(3).Add(text.New(valorStr, props.Text{Size: 8.5, Align: align.Right})),
-		))
+		linhasItens = append(linhasItens, []string{item.Produto, item.Plano, valorStr})
 	}
-	add(line.NewRow(2, sepLine), esp(5))
+	doc.Tabela([]services.Coluna{
+		{Titulo: "Produto / Solução", Largura: 5},
+		{Titulo: "Plano", Largura: 4},
+		{Titulo: "Valor Mensal (R$)", Largura: 3, Align: align.Right},
+	}, linhasItens)
 
 	if len(d.CNPJs) > 0 {
-		add(para("Parágrafo único. Os serviços acima abrangem os seguintes CNPJs da CONTRATADA:", 8), esp(2))
+		doc.Paragrafo("Parágrafo único. Os serviços acima abrangem os seguintes CNPJs da CONTRATADA:")
 		for _, c := range d.CNPJs {
-			label := "• " + formatarCNPJ(c.CNPJ)
+			label := formatarCNPJ(c.CNPJ)
 			if c.Principal {
 				label += " (Estabelecimento Principal)"
 			} else if c.Descricao != "" {
 				label += " — " + c.Descricao
 			}
-			add(para(label, 5.5))
+			doc.Marcador(label)
 		}
-		add(esp(5))
+		doc.Esp(3)
 	}
 
 	// ── CLÁUSULA 3ª ───────────────────────────────────────────────────────────
-	add(
-		clausulaTitulo("CLÁUSULA 3ª – DO VALOR E DA FORMA DE PAGAMENTO"),
-		esp(2),
-		campo("Valor total:", fmt.Sprintf("%s (%s)", formatarMoeda(d.ValorTotal), valorPorExtenso(d.ValorTotal))),
-		campo("Periodicidade:", capitalizar(d.Periodicidade)),
-		campo("Vigência a partir de:", formatarDataCurta(d.DataInicio)),
-		esp(2),
-		para("3.1. O pagamento deverá ser realizado na data de vencimento acordada entre as PARTES, mediante boleto bancário, transferência bancária (TED/PIX) ou outra forma previamente convencionada.", 14),
-		esp(2),
-		para("3.2. O inadimplemento por prazo superior a 15 (quinze) dias corridos implicará a suspensão automática do acesso aos serviços contratados, sem prejuízo da cobrança de multa de 2% (dois por cento) sobre o valor em atraso, acrescida de juros de mora de 1% (um por cento) ao mês e correção monetária pelo IGPM/FGV.", 22),
-		esp(5),
-	)
+	doc.Bloco("CLÁUSULA 3ª – DO VALOR E DA FORMA DE PAGAMENTO")
+	doc.Campo("Valor total:", fmt.Sprintf("%s (%s)", formatarMoeda(d.ValorTotal), valorPorExtenso(d.ValorTotal)))
+	doc.Campo("Periodicidade:", capitalizar(d.Periodicidade))
+	doc.Campo("Vigência a partir de:", formatarDataCurta(d.DataInicio))
+	doc.Esp(3)
+	doc.Paragrafo("3.1. O pagamento deverá ser realizado na data de vencimento acordada entre as PARTES, mediante boleto bancário, transferência bancária (TED/PIX) ou outra forma previamente convencionada.")
+	doc.Paragrafo("3.2. O inadimplemento por prazo superior a 15 (quinze) dias corridos implicará a suspensão automática do acesso aos serviços contratados, sem prejuízo da cobrança de multa de 2% (dois por cento) sobre o valor em atraso, acrescida de juros de mora de 1% (um por cento) ao mês e correção monetária pelo IGPM/FGV.")
 
 	// ── CLÁUSULA 4ª ───────────────────────────────────────────────────────────
-	add(
-		clausulaTitulo("CLÁUSULA 4ª – DAS OBRIGAÇÕES DAS PARTES"),
-		esp(2),
-		para("4.1. Compete à CONTRATANTE: (i) disponibilizar o acesso às plataformas contratadas em ambiente operacional; (ii) prestar suporte técnico nos termos do plano contratado; (iii) manter os sistemas atualizados conforme a legislação fiscal e tributária vigente; (iv) garantir a segurança e disponibilidade dos dados no ambiente de nuvem.", 22),
-		esp(2),
-		para("4.2. Compete à CONTRATADA: (i) efetuar os pagamentos nas datas acordadas; (ii) utilizar os serviços de forma lícita e de acordo com a legislação vigente; (iii) manter atualizados seus dados cadastrais junto à CONTRATANTE; (iv) não ceder, sublicenciar ou compartilhar credenciais de acesso a terceiros.", 22),
-		esp(5),
-	)
+	doc.Bloco("CLÁUSULA 4ª – DAS OBRIGAÇÕES DAS PARTES")
+	doc.Paragrafo("4.1. Compete à CONTRATANTE: (i) disponibilizar o acesso às plataformas contratadas em ambiente operacional; (ii) prestar suporte técnico nos termos do plano contratado; (iii) manter os sistemas atualizados conforme a legislação fiscal e tributária vigente; (iv) garantir a segurança e disponibilidade dos dados no ambiente de nuvem.")
+	doc.Paragrafo("4.2. Compete à CONTRATADA: (i) efetuar os pagamentos nas datas acordadas; (ii) utilizar os serviços de forma lícita e de acordo com a legislação vigente; (iii) manter atualizados seus dados cadastrais junto à CONTRATANTE; (iv) não ceder, sublicenciar ou compartilhar credenciais de acesso a terceiros.")
 
 	// ── CLÁUSULA 5ª ───────────────────────────────────────────────────────────
-	add(
-		clausulaTitulo("CLÁUSULA 5ª – DA VIGÊNCIA E DA RESCISÃO"),
-		esp(2),
-		para(fmt.Sprintf("5.1. O presente Contrato entra em vigor na data de sua assinatura, com início da prestação dos serviços em %s, e permanecerá em vigor por prazo indeterminado, renovando-se automaticamente a cada período de cobrança.", formatarDataCurta(d.DataInicio)), 16),
-		esp(2),
-		para("5.2. Qualquer das PARTES poderá rescindir o presente Contrato mediante notificação prévia por escrito com antecedência mínima de 30 (trinta) dias, sem a incidência de multas rescisórias, desde que não haja débitos pendentes.", 16),
-		esp(2),
-		para("5.3. A rescisão imotivada pela CONTRATADA dentro dos primeiros 12 (doze) meses de vigência implicará o pagamento de multa equivalente a 2 (duas) mensalidades, a título de compensação pelos investimentos realizados pela CONTRATANTE.", 16),
-		esp(5),
-	)
+	doc.Bloco("CLÁUSULA 5ª – DA VIGÊNCIA E DA RESCISÃO")
+	doc.Paragrafo(fmt.Sprintf("5.1. O presente Contrato entra em vigor na data de sua assinatura, com início da prestação dos serviços em %s, e permanecerá em vigor por prazo indeterminado, renovando-se automaticamente a cada período de cobrança.", formatarDataCurta(d.DataInicio)))
+	doc.Paragrafo("5.2. Qualquer das PARTES poderá rescindir o presente Contrato mediante notificação prévia por escrito com antecedência mínima de 30 (trinta) dias, sem a incidência de multas rescisórias, desde que não haja débitos pendentes.")
+	doc.Paragrafo("5.3. A rescisão imotivada pela CONTRATADA dentro dos primeiros 12 (doze) meses de vigência implicará o pagamento de multa equivalente a 2 (duas) mensalidades, a título de compensação pelos investimentos realizados pela CONTRATANTE.")
 
 	// ── CLÁUSULA 6ª ───────────────────────────────────────────────────────────
-	add(
-		clausulaTitulo("CLÁUSULA 6ª – DA PROPRIEDADE INTELECTUAL"),
-		esp(2),
-		para("6.1. Todos os sistemas, softwares, algoritmos, bases de dados, interfaces, documentações e demais ativos tecnológicos disponibilizados pela CONTRATANTE são de sua exclusiva propriedade intelectual, protegidos pela Lei nº 9.279/1996 e pela Lei nº 9.609/1998 (Lei do Software), sendo vedada qualquer reprodução, cópia, engenharia reversa, adaptação ou uso não autorizado, sob pena de responsabilização civil e criminal.", 24),
-		esp(2),
-		para("6.2. A CONTRATADA reconhece que os sistemas disponibilizados constituem segredo industrial e comercial da CONTRATANTE, comprometendo-se a não desenvolver, direta ou indiretamente, produto ou serviço concorrente com base em informações obtidas por meio deste Contrato.", 18),
-		esp(5),
-	)
+	doc.Bloco("CLÁUSULA 6ª – DA PROPRIEDADE INTELECTUAL")
+	doc.Paragrafo("6.1. Todos os sistemas, softwares, algoritmos, bases de dados, interfaces, documentações e demais ativos tecnológicos disponibilizados pela CONTRATANTE são de sua exclusiva propriedade intelectual, protegidos pela Lei nº 9.279/1996 e pela Lei nº 9.609/1998 (Lei do Software), sendo vedada qualquer reprodução, cópia, engenharia reversa, adaptação ou uso não autorizado, sob pena de responsabilização civil e criminal.")
+	doc.Paragrafo("6.2. A CONTRATADA reconhece que os sistemas disponibilizados constituem segredo industrial e comercial da CONTRATANTE, comprometendo-se a não desenvolver, direta ou indiretamente, produto ou serviço concorrente com base em informações obtidas por meio deste Contrato.")
 
 	// ── CLÁUSULA 7ª – NDA ─────────────────────────────────────────────────────
-	add(
-		clausulaTitulo("CLÁUSULA 7ª – DO SIGILO E CONFIDENCIALIDADE (NDA)"),
-		esp(2),
-		para("7.1. As PARTES reconhecem que, em razão da execução deste Contrato, terão acesso a informações confidenciais da outra parte, incluindo, mas não se limitando a: dados técnicos, estratégias comerciais, listas de clientes, metodologias, precificação, planos de negócio, código-fonte, arquiteturas de sistemas e quaisquer outras informações designadas como confidenciais ou que, pela sua natureza, devam ser tratadas como tal.", 28),
-		esp(2),
-		para("7.2. Cada PARTE obriga-se a: (i) manter em estrito sigilo todas as Informações Confidenciais recebidas; (ii) utilizar tais informações exclusivamente para os fins previstos neste Contrato; (iii) não divulgar, reproduzir ou transferir as Informações Confidenciais a terceiros sem autorização prévia e escrita da outra PARTE; (iv) adotar medidas de segurança adequadas para proteger as informações, no mínimo equivalentes às que adota para proteger suas próprias informações confidenciais.", 28),
-		esp(2),
-		para("7.3. As obrigações de confidencialidade não se aplicam a informações que: (i) sejam ou se tornem públicas sem culpa da PARTE receptora; (ii) já eram de conhecimento da PARTE receptora antes da divulgação; (iii) sejam recebidas de terceiros sem restrição de sigilo; ou (iv) devam ser divulgadas por determinação legal ou judicial, desde que a PARTE afetada seja imediatamente notificada.", 26),
-		esp(2),
-		para("7.4. As obrigações estabelecidas nesta Cláusula permanecerão em vigor durante toda a vigência do Contrato e pelo prazo de 5 (cinco) anos após sua extinção, independentemente do motivo. O descumprimento sujeitará a PARTE infratora ao pagamento de indenização por perdas e danos, sem prejuízo das medidas cautelares cabíveis.", 22),
-		esp(5),
-	)
+	doc.Bloco("CLÁUSULA 7ª – DO SIGILO E CONFIDENCIALIDADE (NDA)")
+	doc.Paragrafo("7.1. As PARTES reconhecem que, em razão da execução deste Contrato, terão acesso a informações confidenciais da outra parte, incluindo, mas não se limitando a: dados técnicos, estratégias comerciais, listas de clientes, metodologias, precificação, planos de negócio, código-fonte, arquiteturas de sistemas e quaisquer outras informações designadas como confidenciais ou que, pela sua natureza, devam ser tratadas como tal.")
+	doc.Paragrafo("7.2. Cada PARTE obriga-se a: (i) manter em estrito sigilo todas as Informações Confidenciais recebidas; (ii) utilizar tais informações exclusivamente para os fins previstos neste Contrato; (iii) não divulgar, reproduzir ou transferir as Informações Confidenciais a terceiros sem autorização prévia e escrita da outra PARTE; (iv) adotar medidas de segurança adequadas para proteger as informações, no mínimo equivalentes às que adota para proteger suas próprias informações confidenciais.")
+	doc.Paragrafo("7.3. As obrigações de confidencialidade não se aplicam a informações que: (i) sejam ou se tornem públicas sem culpa da PARTE receptora; (ii) já eram de conhecimento da PARTE receptora antes da divulgação; (iii) sejam recebidas de terceiros sem restrição de sigilo; ou (iv) devam ser divulgadas por determinação legal ou judicial, desde que a PARTE afetada seja imediatamente notificada.")
+	doc.Paragrafo("7.4. As obrigações estabelecidas nesta Cláusula permanecerão em vigor durante toda a vigência do Contrato e pelo prazo de 5 (cinco) anos após sua extinção, independentemente do motivo. O descumprimento sujeitará a PARTE infratora ao pagamento de indenização por perdas e danos, sem prejuízo das medidas cautelares cabíveis.")
 
 	// ── CLÁUSULA 8ª ───────────────────────────────────────────────────────────
-	add(
-		clausulaTitulo("CLÁUSULA 8ª – DA PROTEÇÃO DE DADOS PESSOAIS (LGPD)"),
-		esp(2),
-		para("As PARTES declaram estar cientes e em conformidade com a Lei Geral de Proteção de Dados Pessoais — LGPD (Lei nº 13.709/2018). A CONTRATANTE atuará como Operadora dos dados pessoais eventualmente processados nos sistemas em nome da CONTRATADA (Controladora), comprometendo-se a adotar medidas técnicas e administrativas adequadas para garantir a segurança, confidencialidade e integridade das informações tratadas.", 28),
-		esp(5),
-	)
+	doc.Bloco("CLÁUSULA 8ª – DA PROTEÇÃO DE DADOS PESSOAIS (LGPD)")
+	doc.Paragrafo("As PARTES declaram estar cientes e em conformidade com a Lei Geral de Proteção de Dados Pessoais — LGPD (Lei nº 13.709/2018). A CONTRATANTE atuará como Operadora dos dados pessoais eventualmente processados nos sistemas em nome da CONTRATADA (Controladora), comprometendo-se a adotar medidas técnicas e administrativas adequadas para garantir a segurança, confidencialidade e integridade das informações tratadas.")
 
 	// ── CLÁUSULA 9ª ───────────────────────────────────────────────────────────
-	add(
-		clausulaTitulo("CLÁUSULA 9ª – DO FORO"),
-		esp(2),
-		para(fmt.Sprintf("Fica eleito o foro da Comarca de %s, Estado de %s, com exclusão de qualquer outro, por mais privilegiado que seja, para dirimir quaisquer litígios decorrentes deste Contrato.", municipioEmpresa, ufEmpresa), 12),
-		esp(5),
-		sep(),
-		esp(5),
-	)
+	doc.Bloco("CLÁUSULA 9ª – DO FORO")
+	doc.Paragrafo(fmt.Sprintf("Fica eleito o foro da Comarca de %s, Estado de %s, com exclusão de qualquer outro, por mais privilegiado que seja, para dirimir quaisquer litígios decorrentes deste Contrato.", municipioEmpresa, ufEmpresa))
 
 	if d.Observacoes != "" {
-		add(
-			clausulaTitulo("DISPOSIÇÕES ADICIONAIS"),
-			esp(2),
-			para(d.Observacoes, 14),
-			esp(5),
-			sep(),
-			esp(5),
-		)
+		doc.Bloco("DISPOSIÇÕES ADICIONAIS")
+		doc.Paragrafo(d.Observacoes)
 	}
 
-	// ── ENCERRAMENTO ──────────────────────────────────────────────────────────
-	cidade := municipioEmpresa + " – " + ufEmpresa
-	add(
-		para(fmt.Sprintf("E, por estarem assim justas e acordadas, as PARTES assinam o presente Contrato em 2 (duas) vias de igual teor e forma, na presença das testemunhas abaixo identificadas.", 14), 12),
-		esp(4),
-		para(fmt.Sprintf("%s, _____ de ________________ de ______.", cidade), 6),
-		esp(10),
-		sep(),
-		esp(10),
-	)
+	// ── ENCERRAMENTO E ASSINATURAS ────────────────────────────────────────────
+	doc.Bloco("ENCERRAMENTO")
+	doc.Paragrafo("E, por estarem assim justas e acordadas, as PARTES assinam o presente Contrato em 2 (duas) vias de igual teor e forma, na presença das testemunhas abaixo identificadas.")
+	doc.LocalEData(cidade)
 
-	// ── ASSINATURAS ───────────────────────────────────────────────────────────
-	add(
-		row.New(6).Add(
-			col.New(5).Add(text.New("_________________________________", props.Text{Size: 9, Align: align.Center})),
-			col.New(2),
-			col.New(5).Add(text.New("_________________________________", props.Text{Size: 9, Align: align.Center})),
-		),
-		row.New(5).Add(
-			col.New(5).Add(text.New("CONTRATANTE", props.Text{Size: 8.5, Style: fontstyle.Bold, Align: align.Center})),
-			col.New(2),
-			col.New(5).Add(text.New("CONTRATADA", props.Text{Size: 8.5, Style: fontstyle.Bold, Align: align.Center})),
-		),
-		row.New(10).Add(
-			col.New(5).Add(text.New(nomeEmpresa, props.Text{Size: 8, Align: align.Center, Style: fontstyle.Italic})),
-			col.New(2),
-			col.New(5).Add(text.New(d.Cliente.RazaoSocial, props.Text{Size: 8, Align: align.Center, Style: fontstyle.Italic})),
-		),
-		esp(2),
-		row.New(5).Add(
-			col.New(5).Add(text.New("CNPJ: "+cnpjEmpresa, props.Text{Size: 7.5, Align: align.Center})),
-			col.New(2),
-			col.New(5).Add(text.New("CNPJ: "+cnpjCliente, props.Text{Size: 7.5, Align: align.Center})),
-		),
-		esp(10),
-	)
+	doc.BlocoAssinaturas([]services.Signatario{
+		{Papel: "CONTRATANTE", Org: nomeEmpresa, Doc: cnpjEmpresa, RotuloDoc: "CNPJ"},
+		{Papel: "CONTRATADA", Org: d.Cliente.RazaoSocial, Doc: cnpjCliente, RotuloDoc: "CNPJ"},
+	})
 
-	// ── TESTEMUNHAS ───────────────────────────────────────────────────────────
-	add(
-		para("TESTEMUNHAS:", 6),
-		esp(8),
-		row.New(5).Add(
-			col.New(5).Add(text.New("1. _________________________________", props.Text{Size: 9})),
-			col.New(2),
-			col.New(5).Add(text.New("2. _________________________________", props.Text{Size: 9})),
-		),
-		row.New(5).Add(
-			col.New(5).Add(text.New("   Nome: ___________________________", props.Text{Size: 8.5})),
-			col.New(2),
-			col.New(5).Add(text.New("   Nome: ___________________________", props.Text{Size: 8.5})),
-		),
-		row.New(5).Add(
-			col.New(5).Add(text.New("   CPF:  ___________________________", props.Text{Size: 8.5})),
-			col.New(2),
-			col.New(5).Add(text.New("   CPF:  ___________________________", props.Text{Size: 8.5})),
-		),
-		esp(8),
-		sep(),
-	)
+	doc.Esp(8)
+	doc.Bloco("TESTEMUNHAS")
+	doc.BlocoAssinaturas([]services.Signatario{
+		{Papel: "TESTEMUNHA 1"},
+		{Papel: "TESTEMUNHA 2"},
+	})
 
-	// ── RODAPÉ ────────────────────────────────────────────────────────────────
-	add(
-		esp(2),
-		rodapeTexto(fmt.Sprintf("Gerado automaticamente em %s  ·  %s  ·  FBTax Cloud", time.Now().Format("02/01/2006 às 15:04"), d.Numero)),
-	)
+	doc.Esp(6)
+	doc.Nota(fmt.Sprintf("Contrato %s gerado pelo FBTax Cloud em %s.",
+		d.Numero, time.Now().Format("02/01/2006 às 15:04")))
 
-	doc, err := mrt.Generate()
-	if err != nil {
-		return nil, err
-	}
-	return doc.GetBytes(), nil
+	return doc.Bytes()
 }
 
 func capitalizar(s string) string {
