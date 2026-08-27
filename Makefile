@@ -1,6 +1,6 @@
 # Ambiente de desenvolvimento local — WSL Ubuntu.
 # Detalhes em dev/README.md
-.PHONY: help setup dev backend frontend build test psql migrations db-reset clean
+.PHONY: help setup dev backend frontend build test psql migrations db-reset admin-senha clean
 
 help:
 	@echo "FBTax Cloud — desenvolvimento local"
@@ -16,6 +16,7 @@ help:
 	@echo "  make psql        Console do banco"
 	@echo "  make migrations  Últimas migrations aplicadas"
 	@echo "  make db-reset    APAGA e recria o banco"
+	@echo "  make admin-senha Troca a senha de um usuário admin"
 	@echo "  make clean       Remove binários, dist e logs"
 
 setup:
@@ -46,6 +47,9 @@ migrations:
 
 db-reset:
 	@./dev/db.sh reset
+
+admin-senha:
+	@./dev/admin-senha.sh
 
 clean:
 	@rm -rf backend/fb_cloud frontend/dist dev/logs

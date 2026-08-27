@@ -3,8 +3,10 @@
 Padrão visual e estrutural de todo documento institucional emitido pela FBTECH —
 propostas, termos, contratos e relatórios de projeto.
 
-Foi derivado dos três modelos de referência adotados pela empresa, guardados nesta
-pasta, e reescrito com a identidade FBTECH & IA:
+Foi derivado dos três modelos de referência adotados pela empresa e reescrito com
+a identidade FBTECH & IA. Os PDFs de origem **não estão versionados** — são
+documentos confidenciais de terceiros e este repositório é público; veja
+`README.md` desta pasta:
 
 | Arquivo de referência | Tipo | O que foi aproveitado |
 |---|---|---|
@@ -14,8 +16,8 @@ pasta, e reescrito com a identidade FBTECH & IA:
 
 O escopo padrão do Termo de Entrega do SmartPick vem de um documento nosso, não de
 modelo externo: `Proposta_SmartPick_Farol_JC_assinado.pdf` (JC Distribuição,
-assinada em 24/03/2026). Os entregáveis pré-carregados na tela são a transcrição
-da seção 2.2 daquela proposta.
+assinada em 24/03/2026), também fora do versionamento. Os entregáveis
+pré-carregados na tela são a transcrição da seção 2.2 daquela proposta.
 
 A implementação de referência é `backend/services/fbdoc.go`. Nenhum documento novo
 deve montar PDF direto no maroto: use o kit.

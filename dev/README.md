@@ -65,6 +65,22 @@ Se uma migration falhar, o backend **sobe assim mesmo** e registra `Migration FA
 no log — o erro não derruba o processo, mas a tela que depende da tabela vai falhar.
 Vale conferir `dev/logs/backend.log` depois de adicionar uma migration nova.
 
+## Senha do admin
+
+A migration `021` cria o usuário `claudio_bezerra@hotmail.com` com a senha
+`123456`. Isso é aceitável em `localhost` e **inaceitável em qualquer ambiente
+exposto** — o repositório é público, então essa senha é de conhecimento geral.
+
+Para trocar:
+
+```bash
+make admin-senha                                # banco local
+DATABASE_URL='postgres://…' make admin-senha    # produção
+```
+
+A senha é lida do terminal, nunca entra em argumento de comando nem no histórico
+do shell, e o hash bcrypt é gerado com o mesmo custo (14) que o backend usa.
+
 ## Comandos
 
 ```
@@ -78,6 +94,7 @@ make build       compila os dois como em produção
 make psql        console do banco
 make migrations  migrations aplicadas
 make db-reset    APAGA e recria o banco (pede confirmação)
+make admin-senha troca a senha de um usuário admin
 make clean       remove binários, dist e logs
 ```
 

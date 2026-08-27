@@ -35,6 +35,10 @@ Thumbs.db
 # Ambiente de desenvolvimento local
 dev/logs/
 
+# Documentos confidenciais — modelos de referência e propostas assinadas.
+# Ficam apenas na máquina; o repositório é público. Ver docs/templates/README.md
+docs/templates/*.pdf
+
 # IDE
 .vscode/
 .idea/
