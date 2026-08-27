@@ -8,6 +8,7 @@ const navItems = [
   { label: 'Clientes', path: '/admin/financeiro/clientes' },
   { label: 'Produtos', path: '/admin/financeiro/produtos' },
   { label: 'Contratos', path: '/admin/financeiro/contratos' },
+  { label: 'Termos de Entrega', path: '/admin/financeiro/entregas' },
   { label: 'Tokens', path: '/admin/financeiro/tokens' },
   { label: 'API Keys', path: '/admin/financeiro/api-keys' },
   { label: 'Acesso Portal', path: '/admin/financeiro/portal-clientes' },

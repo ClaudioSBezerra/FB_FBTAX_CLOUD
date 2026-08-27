@@ -7,6 +7,7 @@ import EmpresaPage from './pages/EmpresaPage'
 import ClientesPage from './pages/ClientesPage'
 import ProdutosPage from './pages/ProdutosPage'
 import ContratosPage from './pages/ContratosPage'
+import EntregasPage from './pages/EntregasPage'
 import TokensPage from './pages/TokensPage'
 import ApiKeysPage from './pages/ApiKeysPage'
 import DashboardFinanceiroPage from './pages/DashboardFinanceiroPage'
@@ -86,6 +87,9 @@ function App() {
             } />
             <Route path="/admin/financeiro/contratos" element={
               <FinanceiroRoute><ContratosPage /></FinanceiroRoute>
+            } />
+            <Route path="/admin/financeiro/entregas" element={
+              <FinanceiroRoute><EntregasPage /></FinanceiroRoute>
             } />
             <Route path="/admin/financeiro/tokens" element={
               <FinanceiroRoute><TokensPage /></FinanceiroRoute>
