@@ -85,6 +85,13 @@ export default function PortalPage() {
           {/* ── Barra superior: tema + link admin ── */}
           <div className="flex justify-end items-center gap-3 mb-6">
             <ThemeToggle className="border-slate-600 text-slate-300 hover:text-white hover:border-slate-400" />
+            {/* Página estática servida de public/portfolio — fora do React Router */}
+            <a
+              href="/portfolio/"
+              className="text-sm text-slate-300 hover:text-white border border-slate-600 hover:border-slate-400 dark:hover:border-teal-400/60 px-4 py-1.5 rounded-lg transition-colors"
+            >
+              Portfólio
+            </a>
             <Link
               to="/admin/login"
               className="text-sm text-slate-300 hover:text-white border border-slate-600 hover:border-slate-400 dark:hover:border-teal-400/60 px-4 py-1.5 rounded-lg transition-colors"
