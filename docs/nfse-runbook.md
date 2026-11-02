@@ -59,6 +59,12 @@ Quando a Sefin promover o leiaute novo à produção, ligar o novo leiaute tamb�
 e revalidar contra o XSD de produção baixado na época. O evento de cancelamento (Anexo II) pode ter
 mudanças parecidas; confira no primeiro cancelamento em restrita.
 
+## Cloudflare e códigos 502/504
+
+O Cloudflare substitui o corpo de qualquer 502/504 da origem pela página "Bad gateway". Por isso as
+rotas de NFS-e respondem falhas da Sefin/ADN com **424** e a mensagem real no JSON. Se aparecer um
+502 do Cloudflare nelas, é a origem fora do ar, não um erro tratado.
+
 ## Limites conhecidos
 
 - Perfil fixo: serviço 17.01.01 / NBS 114013900, ISSQN no DAS (Simples), IBS/CBS informativo

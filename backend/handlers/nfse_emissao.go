@@ -47,6 +47,9 @@ func nfseJSON(w http.ResponseWriter, status int, v any) {
 	json.NewEncoder(w).Encode(v)
 }
 
+// nfseErro responde um erro em JSON. Falhas da Sefin/ADN usam 424 (Failed Dependency) e nunca
+// 502/504: o Cloudflare à frente troca o corpo de qualquer 502/504 vindo da origem pela página
+// "Bad gateway" dele, e a mensagem real some.
 func nfseErro(w http.ResponseWriter, status int, msg string) {
 	nfseJSON(w, status, map[string]string{"error": msg})
 }
@@ -468,7 +471,7 @@ func NFSeEmitirHandler(db *sql.DB) http.HandlerFunc {
 		if err != nil {
 			log.Printf("[NFSe] cliente Sefin: %v", err)
 			marcarNFSe(ctx, db, id, "rejeitada", "", "", "", err.Error())
-			nfseErro(w, http.StatusBadGateway, err.Error())
+			nfseErro(w, http.StatusFailedDependency, err.Error())
 			return
 		}
 		db.ExecContext(ctx, `UPDATE financeiro.nfse_emitidas SET status='enviada', updated_at=NOW() WHERE id=$1`, id)
@@ -478,7 +481,7 @@ func NFSeEmitirHandler(db *sql.DB) http.HandlerFunc {
 			// Resultado desconhecido: a nota fica 'enviada' e deve ser reconciliada em /nfse/consultar.
 			db.ExecContext(ctx, `UPDATE financeiro.nfse_emitidas SET erro=$2, updated_at=NOW() WHERE id=$1`, id, "falha de comunicação (resultado desconhecido, use Consultar): "+err.Error())
 			log.Printf("[NFSe] falha de comunicação ao enviar DPS %s: %v", g.ID, err)
-			nfseErro(w, http.StatusBadGateway, "falha de comunicação com a Sefin ("+err.Error()+"); o resultado é desconhecido — use Consultar antes de reemitir")
+			nfseErro(w, http.StatusFailedDependency, "falha de comunicação com a Sefin ("+err.Error()+"); o resultado é desconhecido — use Consultar antes de reemitir")
 			return
 		}
 		if !resp.Autorizada() {
@@ -488,7 +491,7 @@ func NFSeEmitirHandler(db *sql.DB) http.HandlerFunc {
 		}
 		if resp.ChaveAcesso == "" {
 			db.ExecContext(ctx, `UPDATE financeiro.nfse_emitidas SET nfse_xml=$2, erro=$3, updated_at=NOW() WHERE id=$1`, id, resp.NFSeXML, "resposta sem chave de acesso: use Consultar. Corpo: "+resp.Corpo)
-			nfseErro(w, http.StatusBadGateway, "a Sefin respondeu sem chave de acesso; use Consultar para conferir")
+			nfseErro(w, http.StatusFailedDependency, "a Sefin respondeu sem chave de acesso; use Consultar para conferir")
 			return
 		}
 		if resp.TipoAmbiente != 0 && resp.TipoAmbiente != emp.Ambiente {
@@ -619,14 +622,14 @@ func NFSeConsultarHandler(db *sql.DB) http.HandlerFunc {
 		}
 		cli, err := services.NovoClienteSefin(amb, a1)
 		if err != nil {
-			nfseErro(w, http.StatusBadGateway, err.Error())
+			nfseErro(w, http.StatusFailedDependency, err.Error())
 			return
 		}
 		ch := chave.String
 		if ch == "" {
 			resp, err := cli.ConsultarDPS(ctx, idDPS)
 			if err != nil {
-				nfseErro(w, http.StatusBadGateway, err.Error())
+				nfseErro(w, http.StatusFailedDependency, err.Error())
 				return
 			}
 			if !resp.Autorizada() || resp.ChaveAcesso == "" {
@@ -637,7 +640,7 @@ func NFSeConsultarHandler(db *sql.DB) http.HandlerFunc {
 		}
 		resp, err := cli.ConsultarNFSe(ctx, ch)
 		if err != nil {
-			nfseErro(w, http.StatusBadGateway, err.Error())
+			nfseErro(w, http.StatusFailedDependency, err.Error())
 			return
 		}
 		if !resp.Autorizada() {
@@ -709,13 +712,13 @@ func NFSeCancelarHandler(db *sql.DB) http.HandlerFunc {
 		}
 		cli, err := services.NovoClienteSefin(amb, a1)
 		if err != nil {
-			nfseErro(w, http.StatusBadGateway, err.Error())
+			nfseErro(w, http.StatusFailedDependency, err.Error())
 			return
 		}
 		log.Printf("[NFSe] cancelando nota %s (ambiente %d)", chave.String, amb)
 		resp, err := cli.CancelarNFSe(ctx, chave.String, xml)
 		if err != nil {
-			nfseErro(w, http.StatusBadGateway, "falha de comunicação com a Sefin; use Consultar antes de tentar de novo")
+			nfseErro(w, http.StatusFailedDependency, "falha de comunicação com a Sefin; use Consultar antes de tentar de novo")
 			return
 		}
 		if !resp.Autorizada() {
@@ -741,7 +744,7 @@ func mensagemErroCadeiaNFSe(err error) (int, string) {
 	case errors.Is(err, services.ErrNFSeCadeiaAmbienteIndisponivel):
 		return http.StatusInternalServerError, "Não foi possível validar a cadeia do certificado — ambiente do servidor incompleto, contate o suporte"
 	case errors.Is(err, services.ErrNFSeCadeiaDownloadFalhou):
-		return http.StatusBadGateway, "Não foi possível baixar a cadeia de certificação da Autoridade Certificadora — tente novamente em alguns minutos"
+		return http.StatusFailedDependency, "Não foi possível baixar a cadeia de certificação da Autoridade Certificadora — tente novamente em alguns minutos"
 	case errors.Is(err, services.ErrNFSeCadeiaVencida):
 		return http.StatusBadRequest, "O certificado ou uma Autoridade Certificadora da cadeia está vencido — envie um certificado válido"
 	case errors.Is(err, services.ErrNFSeCadeiaAIAEsquemaNaoSuportado):
@@ -824,7 +827,7 @@ func NFSeDANFSeHandler(db *sql.DB) http.HandlerFunc {
 		}
 		cli, err := services.NovoClienteSefin(amb, a1)
 		if err != nil {
-			nfseErro(w, http.StatusBadGateway, err.Error())
+			nfseErro(w, http.StatusFailedDependency, err.Error())
 			return
 		}
 		// Limite curto: o proxy da frente corta respostas lentas com um 502 sem corpo.
@@ -836,7 +839,7 @@ func NFSeDANFSeHandler(db *sql.DB) http.HandlerFunc {
 		log.Printf("[NFSe] DANFSe: resposta em %s (HTTP %d, %d bytes, %s)", time.Since(inicio).Round(time.Millisecond), status, len(corpo), ct)
 		if err != nil {
 			log.Printf("[NFSe] DANFSe: %v", err)
-			nfseErro(w, http.StatusBadGateway, "falha ao buscar o DANFSe: "+err.Error())
+			nfseErro(w, http.StatusFailedDependency, "falha ao buscar o DANFSe: "+err.Error())
 			return
 		}
 		if status != http.StatusOK || !bytes.HasPrefix(corpo, []byte("%PDF")) {
@@ -845,7 +848,7 @@ func NFSeDANFSeHandler(db *sql.DB) http.HandlerFunc {
 				trecho = string(r[:300])
 			}
 			log.Printf("[NFSe] DANFSe da chave %s: HTTP %d (%s): %s", chave.String, status, ct, trecho)
-			nfseErro(w, http.StatusBadGateway, fmt.Sprintf("a Sefin não devolveu o PDF (HTTP %d). Use o portal para imprimir: https://www.nfse.gov.br/ConsultaPublica/?tpc=1&chave=%s", status, chave.String))
+			nfseErro(w, http.StatusFailedDependency, fmt.Sprintf("a Sefin não devolveu o PDF (HTTP %d). Use o portal para imprimir: https://www.nfse.gov.br/ConsultaPublica/?tpc=1&chave=%s", status, chave.String))
 			return
 		}
 		w.Header().Set("Content-Type", "application/pdf")
