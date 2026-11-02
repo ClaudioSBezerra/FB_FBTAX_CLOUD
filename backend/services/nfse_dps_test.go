@@ -620,3 +620,26 @@ func TestNFSeObterDANFSe_RespostasDoServidor(t *testing.T) {
 		t.Fatal("chave curta deveria ser recusada")
 	}
 }
+
+func TestNFSeGerarDANFSe_NotaReal(t *testing.T) {
+	b, err := os.ReadFile(filepath.Join("testdata", "nfse_nota1_real.xml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	pdf, err := GerarDANFSe(string(b), DANFSeExtras{TomadorMunicipio: "Recife", TomadorUF: "PE"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasPrefix(string(pdf), "%PDF") || len(pdf) < 3000 {
+		t.Fatalf("PDF inválido (%d bytes)", len(pdf))
+	}
+	if dir := os.Getenv("DANFSE_DUMP"); dir != "" {
+		os.WriteFile(filepath.Join(dir, "danfse.pdf"), pdf, 0o600)
+	}
+	if _, err := GerarDANFSe("<lixo/>", DANFSeExtras{}); err == nil {
+		t.Fatal("XML sem chave deveria falhar")
+	}
+	if _, err := GerarDANFSe("não é xml", DANFSeExtras{}); err == nil {
+		t.Fatal("XML ilegível deveria falhar")
+	}
+}

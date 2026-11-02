@@ -231,3 +231,32 @@ func TestNFSeClientes_CodIBGEGravaEDevolve(t *testing.T) {
 		t.Fatalf("IBGE não foi atualizado: %q", ibge.String)
 	}
 }
+
+// Sem certificado cadastrado o handler não consegue falar com o ADN e gera o DANFSe do XML.
+func TestNFSeDANFSeHandler_GeraLocalDoXML(t *testing.T) {
+	db := nfseTestDB(t)
+	xml, err := os.ReadFile("../services/testdata/nfse_nota1_real.xml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	db.Exec(`DELETE FROM financeiro.nfse_emitidas`)
+	db.Exec(`DELETE FROM financeiro.nfse_certificado`)
+	db.Exec(`DELETE FROM financeiro.empresas`)
+	var empID, id string
+	if err := db.QueryRow(`INSERT INTO financeiro.empresas (razao_social, cnpj, logradouro, numero, bairro, cep, municipio, uf)
+		VALUES ('FORTES BEZERRA', '38149716000128', 'RUA', 'SN', 'B', '74962320', 'Aparecida', 'GO') RETURNING id`).Scan(&empID); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.QueryRow(`INSERT INTO financeiro.nfse_emitidas (empresa_id, ambiente, serie, n_dps, id_dps, competencia, valor, descricao, status, chave_acesso, nfse_xml)
+		VALUES ($1, 1, '00001', 1, 'DPS-TESTE-DANFSE', '2026-11-01', 24000, 'x', 'autorizada', '52014052238149716000128000000000000126119042182716', $2) RETURNING id`, empID, string(xml)).Scan(&id); err != nil {
+		t.Fatal(err)
+	}
+	rr := chamar(NFSeDANFSeHandler(db), http.MethodGet, "/?id="+id, nil, "")
+	if rr.Code != 200 || rr.Header().Get("X-DANFSe-Origem") != "local" || !bytes.HasPrefix(rr.Body.Bytes(), []byte("%PDF")) {
+		t.Fatalf("DANFSe local: %d origem=%q %.120s", rr.Code, rr.Header().Get("X-DANFSe-Origem"), rr.Body)
+	}
+	db.Exec(`UPDATE financeiro.nfse_emitidas SET status = 'rejeitada' WHERE id = $1`, id)
+	if rr := chamar(NFSeDANFSeHandler(db), http.MethodGet, "/?id="+id, nil, ""); rr.Code != http.StatusConflict {
+		t.Fatalf("nota rejeitada não tem DANFSe: %d", rr.Code)
+	}
+}

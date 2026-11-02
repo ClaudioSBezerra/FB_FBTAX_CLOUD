@@ -802,8 +802,10 @@ func NFSeConvenioHandler(db *sql.DB) http.HandlerFunc {
 	}
 }
 
-// NFSeDANFSeHandler baixa o DANFSe (PDF) de uma nota autorizada — GET /api/financeiro/nfse/danfse?id=.
-// O serviço fica no ADN e exige o certificado do prestador (mTLS).
+// NFSeDANFSeHandler entrega o DANFSe (PDF) de uma nota autorizada ou cancelada —
+// GET /api/financeiro/nfse/danfse?id=[&origem=local]. Tenta primeiro o PDF oficial do ADN (mTLS);
+// se o ADN não devolver o PDF, gera o documento auxiliar localmente a partir do XML da NFS-e.
+// O cabeçalho X-DANFSe-Origem informa qual foi usado (adn ou local).
 func NFSeDANFSeHandler(db *sql.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		id := r.URL.Query().Get("id")
@@ -813,46 +815,71 @@ func NFSeDANFSeHandler(db *sql.DB) http.HandlerFunc {
 		}
 		ctx, cancel := context.WithTimeout(r.Context(), 60*time.Second)
 		defer cancel()
-		var empID string
+		var empID, status string
 		var amb int
-		var chave sql.NullString
-		if err := db.QueryRowContext(ctx, `SELECT empresa_id, ambiente, chave_acesso FROM financeiro.nfse_emitidas WHERE id=$1`, id).Scan(&empID, &amb, &chave); err != nil || !chave.Valid {
+		var chave, nfseXML, tomMun, tomUF sql.NullString
+		if err := db.QueryRowContext(ctx, `
+			SELECT n.empresa_id, n.ambiente, n.status, n.chave_acesso, n.nfse_xml, c.municipio, c.uf
+			FROM financeiro.nfse_emitidas n LEFT JOIN financeiro.clientes c ON c.id = n.cliente_id
+			WHERE n.id = $1`, id).Scan(&empID, &amb, &status, &chave, &nfseXML, &tomMun, &tomUF); err != nil || !chave.Valid {
 			nfseErro(w, http.StatusNotFound, "nota sem chave de acesso")
 			return
 		}
-		a1, err := carregarA1(ctx, db, empID)
-		if err != nil {
-			nfseErro(w, http.StatusConflict, err.Error())
+		if status != "autorizada" && status != "cancelada" {
+			nfseErro(w, http.StatusConflict, "só há DANFSe de nota autorizada ou cancelada")
 			return
 		}
-		cli, err := services.NovoClienteSefin(amb, a1)
-		if err != nil {
-			nfseErro(w, http.StatusFailedDependency, err.Error())
-			return
+		enviarPDF := func(pdf []byte, origem string) {
+			w.Header().Set("Content-Type", "application/pdf")
+			w.Header().Set("Content-Disposition", `attachment; filename="danfse-`+chave.String+`.pdf"`)
+			w.Header().Set("X-DANFSe-Origem", origem)
+			w.Write(pdf)
 		}
-		// Limite curto: o proxy da frente corta respostas lentas com um 502 sem corpo.
-		dctx, dcancel := context.WithTimeout(ctx, 25*time.Second)
-		defer dcancel()
-		inicio := time.Now()
-		log.Printf("[NFSe] DANFSe: buscando chave %s (ambiente %d)", chave.String, amb)
-		corpo, ct, status, err := cli.ObterDANFSe(dctx, chave.String)
-		log.Printf("[NFSe] DANFSe: resposta em %s (HTTP %d, %d bytes, %s)", time.Since(inicio).Round(time.Millisecond), status, len(corpo), ct)
-		if err != nil {
-			log.Printf("[NFSe] DANFSe: %v", err)
-			nfseErro(w, http.StatusFailedDependency, "falha ao buscar o DANFSe: "+err.Error())
-			return
+
+		var cli *services.ClienteSefin
+		if a1, err := carregarA1(ctx, db, empID); err == nil {
+			cli, _ = services.NovoClienteSefin(amb, a1)
 		}
-		if status != http.StatusOK || !bytes.HasPrefix(corpo, []byte("%PDF")) {
-			trecho := string(corpo)
-			if r := []rune(trecho); len(r) > 300 {
-				trecho = string(r[:300])
+
+		// 1) PDF oficial do ADN (a menos que se peça o local).
+		motivo := ""
+		if cli != nil && r.URL.Query().Get("origem") != "local" {
+			dctx, dcancel := context.WithTimeout(ctx, 15*time.Second)
+			inicio := time.Now()
+			corpo, ct, st, err := cli.ObterDANFSe(dctx, chave.String)
+			dcancel()
+			log.Printf("[NFSe] DANFSe ADN: chave %s em %s (HTTP %d, %d bytes, %s, erro=%v)", chave.String, time.Since(inicio).Round(time.Millisecond), st, len(corpo), ct, err)
+			if err == nil && st == http.StatusOK && bytes.HasPrefix(corpo, []byte("%PDF")) {
+				enviarPDF(corpo, "adn")
+				return
 			}
-			log.Printf("[NFSe] DANFSe da chave %s: HTTP %d (%s): %s", chave.String, status, ct, trecho)
-			nfseErro(w, http.StatusFailedDependency, fmt.Sprintf("a Sefin não devolveu o PDF (HTTP %d). Use o portal para imprimir: https://www.nfse.gov.br/ConsultaPublica/?tpc=1&chave=%s", status, chave.String))
+			motivo = fmt.Sprintf("ADN HTTP %d", st)
+			if err != nil {
+				motivo = err.Error()
+			}
+		}
+
+		// 2) Documento auxiliar gerado do XML da NFS-e (busca o XML na Sefin se ainda não o temos).
+		if !nfseXML.Valid || nfseXML.String == "" {
+			if cli == nil {
+				nfseErro(w, http.StatusConflict, "sem certificado para buscar o XML da nota")
+				return
+			}
+			resp, err := cli.ConsultarNFSe(ctx, chave.String)
+			if err != nil || !resp.Autorizada() || resp.NFSeXML == "" {
+				nfseErro(w, http.StatusFailedDependency, "não foi possível obter o XML da NFS-e para gerar o DANFSe")
+				return
+			}
+			nfseXML = sql.NullString{String: resp.NFSeXML, Valid: true}
+			db.ExecContext(ctx, `UPDATE financeiro.nfse_emitidas SET nfse_xml = $2, updated_at = NOW() WHERE id = $1`, id, resp.NFSeXML)
+		}
+		pdf, err := services.GerarDANFSe(nfseXML.String, services.DANFSeExtras{TomadorMunicipio: tomMun.String, TomadorUF: tomUF.String, Cancelada: status == "cancelada"})
+		if err != nil {
+			log.Printf("[NFSe] DANFSe local: %v (ADN: %s)", err, motivo)
+			nfseErro(w, http.StatusInternalServerError, "não foi possível gerar o DANFSe: "+err.Error())
 			return
 		}
-		w.Header().Set("Content-Type", "application/pdf")
-		w.Header().Set("Content-Disposition", `attachment; filename="danfse-`+chave.String+`.pdf"`)
-		w.Write(corpo)
+		log.Printf("[NFSe] DANFSe gerado localmente para %s (ADN: %s)", chave.String, motivo)
+		enviarPDF(pdf, "local")
 	}
 }
