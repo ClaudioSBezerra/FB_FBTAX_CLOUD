@@ -37,8 +37,10 @@ Emissão direta na Sefin Nacional (sem provedor), com o A1 da Fortes Bezerra
 
 - A prévia valida e assina o DPS **sem** gastar número e **sem** falar com a Sefin.
 - Produção exige a frase de confirmação, no cliente e no servidor (envio e cancelamento).
-- Número de DPS: série 70000, ambiente separado; produção começa no 101 (1–8 foram usados no
-  Emissor Web). Número rejeitado **não é reaproveitado**.
+- Número de DPS: série **00001**, ambiente separado, começando do 1. A faixa da série depende do
+  tipo de emissor (Anexo I, erro E0010): 00001–49999 aplicativo próprio (este sistema),
+  50000–69999 emissor móvel, 70000–79999 Emissor Web, 80000–89999 transcrição manual. A 70000
+  das notas do portal **não serve** para API. Número rejeitado **não é reaproveitado**.
 - Se a resposta da Sefin se perder (nota `enviada`), use **Consultar** antes de reemitir.
 - Uma nota viva por contrato e competência (índice único).
 

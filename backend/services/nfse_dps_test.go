@@ -425,8 +425,35 @@ func TestNFSePedidoCancelamento(t *testing.T) {
 	}
 }
 
+// A série padrão do sistema precisa estar na faixa de aplicativo próprio; a 70000 (Emissor Web)
+// foi recusada pela Sefin com E0010.
+func TestNFSeSeriePadrao_FaixaAplicativoProprio(t *testing.T) {
+	if !SerieAplicativoProprioValida(NFSeSeriePadrao) {
+		t.Fatalf("série padrão %q fora da faixa 1-49999", NFSeSeriePadrao)
+	}
+	for _, ruim := range []string{"70000", "50000", "49999x", "00000", "", "80000"} {
+		if ruim != "49999x" && ruim != "" && ruim != "00000" && SerieAplicativoProprioValida(ruim) {
+			t.Errorf("%s não é de aplicativo próprio", ruim)
+		}
+	}
+	for _, bom := range []string{"00001", "49999", "1"} {
+		if !SerieAplicativoProprioValida(bom) {
+			t.Errorf("%s deveria ser válida", bom)
+		}
+	}
+	for _, ruim := range []string{"49999x", "", "00000", "49999 "} {
+		if SerieAplicativoProprioValida(ruim) {
+			t.Errorf("%q deveria ser inválida", ruim)
+		}
+	}
+	g := gerar(t, func() DPSDados { d := dadosNota1(); d.Serie = ""; return d }())
+	if g.Serie != "00001" || !strings.Contains(g.ID, "00001"+"000000000000004") {
+		t.Fatalf("série vazia deveria virar 00001: %s", g.ID)
+	}
+}
+
 func TestNFSeNormalizarSerieDPS(t *testing.T) {
-	for in, want := range map[string]string{"": "70000", "70000": "70000", " 70000": "70000", "7": "00007", "070000": ""} {
+	for in, want := range map[string]string{"": "00001", "70000": "70000", " 70000": "70000", "7": "00007", "070000": ""} {
 		got, err := NormalizarSerieDPS(in)
 		if want == "" && err == nil || want != "" && (err != nil || got != want) {
 			t.Errorf("série %q: got %q err %v, want %q", in, got, err, want)

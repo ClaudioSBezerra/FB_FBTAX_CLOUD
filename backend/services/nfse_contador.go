@@ -7,10 +7,13 @@ import (
 	"fmt"
 )
 
-// nfseUltimoInicialSerie70000 é o último número já consumido da série 70000 no Emissor Web
-// (DPS 1 a 8 usados ou rejeitados); o primeiro número do sistema nessa série é o 101.
-// Qualquer outra série começa do 1.
-const nfseUltimoInicialSerie70000 = 100
+// nfseSerieEmissorWeb é a série que o Emissor Web já usou (DPS 1 a 8). O sistema não a usa
+// (a faixa 70000-79999 é do Emissor Web, E0010), mas se alguém a configurar, começa do 101.
+// Qualquer outra série, inclusive a padrão 00001, começa do 1.
+const (
+	nfseSerieEmissorWeb         = "70000"
+	nfseUltimoInicialSerie70000 = 100
+)
 
 // NormalizarSerieDPS devolve a série com 5 dígitos (mesma regra do GerarDPS).
 func NormalizarSerieDPS(serie string) (string, error) {
@@ -37,7 +40,7 @@ func ReservarNDPS(ctx context.Context, db *sql.DB, empresaID string, ambiente in
 		return 0, errors.New("ambiente inválido")
 	}
 	var inicial int64
-	if serie == NFSeSeriePadrao {
+	if serie == nfseSerieEmissorWeb {
 		inicial = nfseUltimoInicialSerie70000
 	}
 	var n int64

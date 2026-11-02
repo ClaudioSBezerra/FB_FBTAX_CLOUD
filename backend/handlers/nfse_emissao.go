@@ -377,6 +377,10 @@ func NFSeEmitirHandler(db *sql.DB) http.HandlerFunc {
 			return
 		}
 
+		if !services.SerieAplicativoProprioValida(services.NFSeSeriePadrao) {
+			nfseErro(w, http.StatusInternalServerError, "série padrão fora da faixa de aplicativo próprio (1 a 49999)")
+			return
+		}
 		a1, err := carregarA1(ctx, db, emp.ID)
 		if err != nil {
 			nfseErro(w, http.StatusConflict, err.Error())

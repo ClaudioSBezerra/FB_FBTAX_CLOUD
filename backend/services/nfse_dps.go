@@ -20,10 +20,15 @@ import (
 )
 
 const (
+	// Faixas da série do DPS (Anexo I, E0010): 00001-49999 aplicativo próprio; 50000-69999
+	// emissor móvel; 70000-79999 Emissor Web; 80000-89999 transcrição manual. Este sistema é
+	// "aplicativo próprio" e por isso usa a série 1; a 70000 é do Emissor Web e a Sefin recusa.
+	NFSeSerieMaxAplicativoProprio = 49999
+
 	NFSeNamespace   = "http://www.sped.fazenda.gov.br/nfse"
 	NFSeVersaoDPS   = "1.01"
 	NFSeVerAplic    = "FBTAX-1.0"
-	NFSeSeriePadrao = "70000"
+	NFSeSeriePadrao = "00001"
 
 	// Serviço fixo do prestador: assessoria ou consultoria (LC 116, 17.01.01).
 	nfseCTribNac = "170101"
@@ -460,4 +465,17 @@ func EmpacotarDPS(xml string) (string, error) {
 		return "", fmt.Errorf("gzip: %w", err)
 	}
 	return base64.StdEncoding.EncodeToString(buf.Bytes()), nil
+}
+
+// SerieAplicativoProprioValida informa se a série (5 dígitos) está na faixa de emissão com
+// aplicativo próprio (1 a 49999). Qualquer outra faixa é de outro tipo de emissor (E0010).
+func SerieAplicativoProprioValida(serie string) bool {
+	n := 0
+	for _, r := range serie {
+		if r < '0' || r > '9' {
+			return false
+		}
+		n = n*10 + int(r-'0')
+	}
+	return n >= 1 && n <= NFSeSerieMaxAplicativoProprio
 }
