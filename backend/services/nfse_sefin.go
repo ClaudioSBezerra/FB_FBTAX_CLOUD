@@ -79,8 +79,12 @@ func NovoClienteSefin(ambiente int, a1 *NFSeCertificadoA1) (*ClienteSefin, error
 	// aceitas, e o Go não envia o certificado quando o emissor dele não casa com a lista. Aqui o
 	// certificado, com a cadeia completada no upload, é sempre enviado e o servidor decide.
 	tr := &http.Transport{TLSClientConfig: &tls.Config{
-		MinVersion:           tls.VersionTLS12,
-		RootCAs:              pool,
+		MinVersion: tls.VersionTLS12,
+		RootCAs:    pool,
+		// O IIS da Sefin negocia TLS 1.2 e só pede o certificado de cliente depois, por
+		// renegociação iniciada pelo servidor; o Go a recusa por padrão ("tls: no renegotiation").
+		// Uma renegociação por conexão basta. Não existe em TLS 1.3, só no 1.2.
+		Renegotiation:        tls.RenegotiateOnceAsClient,
 		GetClientCertificate: func(*tls.CertificateRequestInfo) (*tls.Certificate, error) { return &tlsCert, nil },
 	}}
 	return &ClienteSefin{Base: base, HTTP: &http.Client{Transport: tr, Timeout: sefinTimeout}}, nil
