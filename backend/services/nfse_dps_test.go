@@ -513,3 +513,41 @@ func TestNFSeGerarDPS_LeiauteProducaoRestrita(t *testing.T) {
 		t.Fatal("produção deve manter finNFSe dentro de IBSCBS")
 	}
 }
+
+// O Id do DPS não tem o ambiente: o mesmo número em teste e produção não pode colidir.
+func TestNFSeEmitidas_MesmoIdEmAmbientesDistintos(t *testing.T) {
+	url := os.Getenv("TEST_DATABASE_URL")
+	if url == "" {
+		t.Skip("TEST_DATABASE_URL não definido")
+	}
+	db, err := sql.Open("postgres", url)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	cnpj := fmt.Sprintf("%014d", time.Now().UnixNano()%100000000000000)
+	var empresaID string
+	if err := db.QueryRow(`INSERT INTO financeiro.empresas (razao_social, cnpj, logradouro, numero, bairro, cep, municipio, uf)
+		VALUES ('TESTE', $1, 'RUA', '1', 'B', '74000000', 'X', 'GO') RETURNING id`, cnpj).Scan(&empresaID); err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		db.Exec(`DELETE FROM financeiro.nfse_emitidas WHERE empresa_id = $1`, empresaID)
+		db.Exec(`DELETE FROM financeiro.empresas WHERE id = $1`, empresaID)
+	}()
+	const id = "DPS520140523814971600012870000000000000000101"
+	ins := func(ambiente int) error {
+		_, err := db.Exec(`INSERT INTO financeiro.nfse_emitidas (empresa_id, ambiente, serie, n_dps, id_dps, competencia, valor, descricao)
+			VALUES ($1, $2, '70000', 101, $3, '2026-11-01', 1, 't')`, empresaID, ambiente, id)
+		return err
+	}
+	if err := ins(2); err != nil {
+		t.Fatalf("restrita: %v", err)
+	}
+	if err := ins(1); err != nil {
+		t.Fatalf("produção deveria aceitar o mesmo Id: %v", err)
+	}
+	if err := ins(1); err == nil {
+		t.Fatal("repetir o mesmo DPS no mesmo ambiente deveria ser recusado")
+	}
+}

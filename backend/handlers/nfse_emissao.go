@@ -25,6 +25,8 @@ import (
 	"time"
 
 	"fb_cloud/services"
+
+	"github.com/lib/pq"
 )
 
 const (
@@ -445,7 +447,15 @@ func NFSeEmitirHandler(db *sql.DB) http.HandlerFunc {
 			req.ValorCentavos, strings.Join(strings.Fields(req.Descricao), " "), xml).Scan(&id)
 		if err != nil {
 			log.Printf("[NFSe] erro ao registrar DPS %s: %v", g.ID, err)
-			nfseErro(w, http.StatusConflict, "não foi possível registrar a nota (já existe nota para este contrato e competência?)")
+			var pqErr *pq.Error
+			switch {
+			case errors.As(err, &pqErr) && pqErr.Code == "23505" && strings.Contains(pqErr.Constraint, "contrato_competencia"):
+				nfseErro(w, http.StatusConflict, "já existe uma nota viva para este contrato e competência")
+			case errors.As(err, &pqErr):
+				nfseErro(w, http.StatusInternalServerError, "erro ao registrar a nota no banco ("+string(pqErr.Code)+" "+pqErr.Constraint+")")
+			default:
+				nfseErro(w, http.StatusInternalServerError, "erro ao registrar a nota no banco")
+			}
 			return
 		}
 
