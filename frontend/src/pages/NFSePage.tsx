@@ -84,6 +84,7 @@ export default function NFSePage() {
   const [previa, setPrevia] = useState<string | null>(null)
   const [confirmacao, setConfirmacao] = useState('')
   const [ocupado, setOcupado] = useState(false)
+  const [convenio, setConvenio] = useState<string | null>(null)
 
   const carregar = useCallback(async () => {
     try {
@@ -134,6 +135,12 @@ export default function NFSePage() {
     if (!res.ok) return toast.error(await lerErro(res))
     toast.success('Parâmetros salvos')
     carregar()
+  }
+
+  const verificarConvenio = async () => {
+    setConvenio('Consultando…')
+    const res = await fetch('/api/financeiro/nfse/convenio')
+    setConvenio(res.ok ? JSON.stringify(await res.json(), null, 2) : await lerErro(res))
   }
 
   const preencherIBGE = async () => {
@@ -226,7 +233,9 @@ export default function NFSePage() {
                 <span className="text-sm">Ambiente: <Badge variant={producao ? 'destructive' : 'secondary'}>{producao ? 'PRODUÇÃO' : 'Produção restrita (teste)'}</Badge></span>
                 {!producao && <Button variant="destructive" onClick={() => window.confirm('Ativar PRODUÇÃO? As notas passarão a valer fiscalmente.') && salvarPrestador(1)}>Ativar produção</Button>}
                 {producao && <Button variant="outline" onClick={() => salvarPrestador(2)}>Voltar para teste</Button>}
+                <Button variant="outline" onClick={verificarConvenio}>Verificar município nos ambientes</Button>
               </div>
+              {convenio && <pre className="text-xs overflow-auto max-h-64 bg-white border p-2">{convenio}</pre>}
             </CardContent>
           </Card>
         )}

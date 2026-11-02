@@ -312,3 +312,13 @@ func truncarTexto(s string, n int) string {
 func (c *ClienteSefin) ConsultarDPS(ctx context.Context, idDPS string) (*RespostaSefin, error) {
 	return c.fazer(ctx, http.MethodGet, "/dps/"+idDPS, nil)
 }
+
+// ConsultarConvenio lê o cadastro de convênio do município no ambiente (GET
+// /parametros_municipais/{cod}/convenio). Somente leitura: serve para saber se o município
+// está habilitado a emitir pelo padrão nacional naquele ambiente.
+func (c *ClienteSefin) ConsultarConvenio(ctx context.Context, codMunicipio string) (*RespostaSefin, error) {
+	if len(codMunicipio) != 7 || soDigitos(codMunicipio) != codMunicipio {
+		return nil, errors.New("código IBGE deve ter 7 dígitos")
+	}
+	return c.fazer(ctx, http.MethodGet, "/parametros_municipais/"+codMunicipio+"/convenio", nil)
+}

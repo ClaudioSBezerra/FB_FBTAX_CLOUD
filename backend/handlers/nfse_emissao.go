@@ -737,3 +737,45 @@ func mensagemErroCadeiaNFSe(err error) (int, string) {
 		return http.StatusBadRequest, "O certificado não pôde ter a cadeia de certificação validada até uma raiz ICP-Brasil"
 	}
 }
+
+// NFSeConvenioHandler consulta, nos dois ambientes, se o município do prestador está no cadastro
+// de convênio do Sistema Nacional — GET /api/financeiro/nfse/convenio. Somente leitura.
+func NFSeConvenioHandler(db *sql.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		ctx, cancel := context.WithTimeout(r.Context(), 60*time.Second)
+		defer cancel()
+		emp, err := carregarEmpresaNFSe(ctx, db)
+		if err != nil || len(emp.CodIBGE) != 7 {
+			nfseErro(w, http.StatusConflict, "cadastre a empresa e o IBGE do município antes")
+			return
+		}
+		a1, err := carregarA1(ctx, db, emp.ID)
+		if err != nil {
+			nfseErro(w, http.StatusConflict, err.Error())
+			return
+		}
+		out := map[string]any{"municipio": emp.CodIBGE}
+		for amb, nome := range map[int]string{1: "producao", 2: "producao_restrita"} {
+			cli, err := services.NovoClienteSefin(amb, a1)
+			if err != nil {
+				out[nome] = map[string]any{"erro": err.Error()}
+				continue
+			}
+			resp, err := cli.ConsultarConvenio(ctx, emp.CodIBGE)
+			if err != nil {
+				out[nome] = map[string]any{"erro": err.Error()}
+				continue
+			}
+			corpo := resp.Corpo
+			if len([]rune(corpo)) > 1500 {
+				corpo = string([]rune(corpo)[:1500]) + "…"
+			}
+			out[nome] = map[string]any{"http": resp.Status, "resposta": corpo}
+		}
+		nfseJSON(w, http.StatusOK, out)
+	}
+}
