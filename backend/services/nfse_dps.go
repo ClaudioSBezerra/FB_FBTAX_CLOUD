@@ -215,6 +215,9 @@ func tpInscricao(doc string) string {
 	return "1"
 }
 
+// nfseLeiauteFinNFSeEmInfDPS informa se o ambiente usa o leiaute novo (finNFSe em infDPS).
+func nfseLeiauteFinNFSeEmInfDPS(ambiente int) bool { return ambiente == 2 }
+
 // IDDPS monta o identificador do DPS: DPS + cLocEmi(7) + tpInsc(1) + CNPJ(14) + série(5) + nDPS(15).
 func IDDPS(codMunEmissor, cnpj, serie string, nDPS int64) string {
 	if len(codMunEmissor) != 7 || len(cnpj) != 14 || len(serie) != 5 || nDPS <= 0 {
@@ -361,12 +364,14 @@ func GerarDPS(d DPSDados) (DPSGerado, error) {
 			elemOpc("fone", soDigitos(d.Tomador.Fone))+
 			elemOpc("email", strings.TrimSpace(d.Tomador.Email)))
 
+	// No leiaute novo (produção restrita) cNBS vem antes de xDescServ; no de produção, depois.
+	cServ := elemTxt("cTribNac", nfseCTribNac) + elemTxt("xDescServ", normalizarTexto(d.Descricao)) + elemTxt("cNBS", nfseCNBS)
+	if nfseLeiauteFinNFSeEmInfDPS(d.Ambiente) {
+		cServ = elemTxt("cTribNac", nfseCTribNac) + elemTxt("cNBS", nfseCNBS) + elemTxt("xDescServ", normalizarTexto(d.Descricao))
+	}
 	serv := elem("serv",
 		elem("locPrest", elemTxt("cLocPrestacao", soDigitos(d.CodMunPrestacao)))+
-			elem("cServ",
-				elemTxt("cTribNac", nfseCTribNac)+
-					elemTxt("xDescServ", normalizarTexto(d.Descricao))+
-					elemTxt("cNBS", nfseCNBS)))
+			elem("cServ", cServ))
 
 	valores := elem("valores",
 		elem("vServPrest", elemTxt("vServ", formatarValor(d.ValorCentavos)))+
@@ -380,16 +385,26 @@ func GerarDPS(d DPSDados) (DPSGerado, error) {
 								elemTxt("tpRetPisCofins", "0")))+
 					elem("totTrib", elemTxt("pTotTribSN", ptot))))
 
+	// Leiaute por ambiente. A produção restrita (XSD de 20/10/2026) traz finNFSe em infDPS, logo
+	// após tpEmit, e o tira do grupo IBSCBS; a produção (XSD 20260209, o das notas reais) mantém
+	// finNFSe dentro de IBSCBS. Quando a Sefin promover o leiaute novo à produção, basta ligar
+	// nfseLeiauteFinNFSeEmInfDPS(1).
+	finNFSe := elemTxt("finNFSe", "0")
+	finNoInfDPS, finNoIBSCBS := "", finNFSe
+	if nfseLeiauteFinNFSeEmInfDPS(d.Ambiente) {
+		finNoInfDPS, finNoIBSCBS = finNFSe, ""
+	}
+	// CST/cClassTrib: dentro de gIBSCBS na produção; direto em trib no leiaute novo.
+	tribIBSCBS := elem("gIBSCBS", elemTxt("CST", "000")+elemTxt("cClassTrib", "000001"))
+	if nfseLeiauteFinNFSeEmInfDPS(d.Ambiente) {
+		tribIBSCBS = elemTxt("CST", "000") + elemTxt("cClassTrib", "000001")
+	}
 	ibscbs := elem("IBSCBS",
-		elemTxt("finNFSe", "0")+
+		finNoIBSCBS+
 			elemTxt("indFinal", "0")+
 			elemTxt("cIndOp", nfseCIndOp)+
 			elemTxt("indDest", "0")+
-			elem("valores",
-				elem("trib",
-					elem("gIBSCBS",
-						elemTxt("CST", "000")+
-							elemTxt("cClassTrib", "000001")))))
+			elem("valores", elem("trib", tribIBSCBS)))
 
 	corpo := elemTxt("tpAmb", fmt.Sprint(d.Ambiente)) +
 		elemTxt("dhEmi", d.Emissao.Format("2006-01-02T15:04:05-07:00")) +
@@ -398,6 +413,7 @@ func GerarDPS(d DPSDados) (DPSGerado, error) {
 		elemTxt("nDPS", fmt.Sprint(d.NDPS)) +
 		elemTxt("dCompet", d.Competencia.Format("2006-01-02")) +
 		elemTxt("tpEmit", "1") +
+		finNoInfDPS +
 		elemTxt("cLocEmi", soDigitos(d.CodMunEmissor)) +
 		prest + toma + serv + valores + ibscbs
 

@@ -490,3 +490,26 @@ func TestNFSeReservarNDPS_Concorrente(t *testing.T) {
 		t.Errorf("ambiente 2 deveria ter contador próprio (101): %d %v", v, err)
 	}
 }
+
+// A produção restrita usa o leiaute novo: finNFSe em infDPS logo após tpEmit e fora do IBSCBS.
+func TestNFSeGerarDPS_LeiauteProducaoRestrita(t *testing.T) {
+	d := dadosNota1()
+	d.Ambiente = 2
+	g := gerar(t, d)
+	if !strings.Contains(g.InfDPS, "<tpEmit>1</tpEmit><finNFSe>0</finNFSe><cLocEmi>") {
+		t.Fatalf("finNFSe deveria vir logo após tpEmit: %s", g.InfDPS)
+	}
+	if strings.Count(g.InfDPS, "<finNFSe>") != 1 || strings.Contains(g.InfDPS, "<IBSCBS><finNFSe>") {
+		t.Fatalf("finNFSe não pode repetir dentro de IBSCBS: %s", g.InfDPS)
+	}
+	if !strings.Contains(g.InfDPS, "<cTribNac>170101</cTribNac><cNBS>114013900</cNBS><xDescServ>") {
+		t.Fatalf("no leiaute novo cNBS vem antes de xDescServ: %s", g.InfDPS)
+	}
+	if strings.Contains(g.InfDPS, "<gIBSCBS>") || !strings.Contains(g.InfDPS, "<trib><CST>000</CST><cClassTrib>000001</cClassTrib></trib>") {
+		t.Fatalf("no leiaute novo CST/cClassTrib ficam direto em trib: %s", g.InfDPS)
+	}
+	// Produção mantém o leiaute das notas reais.
+	if p := gerar(t, dadosNota1()); strings.Contains(p.InfDPS, "<tpEmit>1</tpEmit><finNFSe>") || !strings.Contains(p.InfDPS, "<IBSCBS><finNFSe>0</finNFSe>") {
+		t.Fatal("produção deve manter finNFSe dentro de IBSCBS")
+	}
+}
