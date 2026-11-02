@@ -9,17 +9,19 @@ require (
 )
 
 require (
+	github.com/aclindsa/ofxgo v0.1.3
+	github.com/google/uuid v1.6.0
 	github.com/johnfercher/maroto/v2 v2.4.0
 	github.com/joho/godotenv v1.5.1
+	golang.org/x/text v0.35.0
+	software.sslmate.com/src/go-pkcs12 v0.7.4
 )
 
 require (
-	github.com/aclindsa/ofxgo v0.1.3 // indirect
 	github.com/aclindsa/xml v0.0.0-20201125035057-bbd5c9ec99ac // indirect
 	github.com/boombuler/barcode v1.1.0 // indirect
 	github.com/clipperhouse/uax29/v2 v2.7.0 // indirect
 	github.com/f-amaral/go-async v0.3.0 // indirect
-	github.com/google/uuid v1.6.0 // indirect
 	github.com/hhrutter/lzw v1.0.0 // indirect
 	github.com/hhrutter/pkcs7 v0.2.0 // indirect
 	github.com/hhrutter/tiff v1.0.2 // indirect
@@ -29,6 +31,5 @@ require (
 	github.com/phpdave11/gofpdf v1.4.3 // indirect
 	github.com/pkg/errors v0.9.1 // indirect
 	golang.org/x/image v0.37.0 // indirect
-	golang.org/x/text v0.35.0 // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect
 )
