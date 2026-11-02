@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"bytes"
+	"context"
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/x509"
@@ -78,6 +79,12 @@ func upload(t *testing.T, h http.HandlerFunc, pfx []byte, senha string) *httptes
 // Fluxo completo sem falar com a Sefin: cadastro, certificado, prévia e salvaguardas de produção.
 func TestNFSeFluxoSemEnvio(t *testing.T) {
 	t.Setenv("FINANCEIRO_SECRET", "segredo-de-teste")
+	// Certificados de teste não têm raiz ICP-Brasil: o passo de cadeia é trocado por um stub.
+	original := completarCadeiaNFSe
+	completarCadeiaNFSe = func(_ context.Context, _ *x509.Certificate, i []*x509.Certificate) ([]*x509.Certificate, error) {
+		return i, nil
+	}
+	t.Cleanup(func() { completarCadeiaNFSe = original })
 	db := nfseTestDB(t)
 	cnpj := "38149716000128"
 

@@ -11,6 +11,14 @@ Emissão direta na Sefin Nacional (sem provedor), com o A1 da Fortes Bezerra
 3. Se a conexão TLS com a Sefin falhar por cadeia ICP-Brasil desconhecida, montar o PEM das
    CAs e definir `NFSE_TLS_CA_FILE=/caminho/ca.pem` (mesmo expediente do FB_APU02).
 
+## Certificado: o que o upload faz sozinho (lições do FB_APU02)
+
+1. Converte `.pfx` em BER para DER via `openssl` (o Go só lê DER). Por isso a imagem leva `openssl`.
+2. Completa a cadeia ICP-Brasil baixando as ACs intermediárias pela AIA e valida até uma raiz
+   ICP-Brasil embutida (v5/v10/v11/v12). Sem isso a Sefin rejeita o handshake mTLS
+   (`bad record MAC` no TLS 1.3 = certificado recusado). Exige saída HTTP do servidor.
+3. Guarda o `.pfx` reempacotado, cifrado, já com a cadeia; o cliente mTLS sempre o envia.
+
 ## Ordem recomendada na tela
 
 1. **Empresa** (menu Empresa): confirmar razão social, CNPJ e endereço do emitente.

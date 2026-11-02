@@ -36,8 +36,9 @@ var ErrNFSeSenhaIncorreta = errors.New("senha do certificado incorreta")
 
 // NFSeCertificadoA1 é o par chave/certificado já decodificado do PFX.
 type NFSeCertificadoA1 struct {
-	Chave crypto.Signer
-	Cert  *x509.Certificate
+	Chave  crypto.Signer
+	Cert   *x509.Certificate
+	Cadeia []*x509.Certificate // ACs intermediárias (completadas no upload, ver nfse_cadeia.go)
 }
 
 // CarregarCertificadoA1 decifra e decodifica o PFX guardado no cofre. Os dois argumentos
@@ -63,7 +64,7 @@ func CarregarCertificadoA1(pfxCifrado, senhaCifrada string) (*NFSeCertificadoA1,
 
 // DecodificarPFX lê um PKCS#12. Só chaves RSA são aceitas (exigência do algoritmo rsa-sha256).
 func DecodificarPFX(pfx []byte, senha string) (*NFSeCertificadoA1, error) {
-	chave, cert, _, err := pkcs12.DecodeChain(pfx, senha)
+	chave, cert, cadeia, err := pkcs12.DecodeChain(pfx, senha)
 	if errors.Is(err, pkcs12.ErrIncorrectPassword) {
 		return nil, ErrNFSeSenhaIncorreta
 	}
@@ -74,7 +75,7 @@ func DecodificarPFX(pfx []byte, senha string) (*NFSeCertificadoA1, error) {
 	if !ok {
 		return nil, errors.New("o certificado não contém chave RSA")
 	}
-	return &NFSeCertificadoA1{Chave: rsaKey, Cert: cert}, nil
+	return &NFSeCertificadoA1{Chave: rsaKey, Cert: cert, Cadeia: cadeia}, nil
 }
 
 var reCNPJCN = regexp.MustCompile(`:(\d{14})\s*$`)
@@ -175,4 +176,10 @@ func CifrarCertificadoA1(pfx []byte, senha string) (pfxCifrado, senhaCifrada str
 		return "", "", time.Time{}, err
 	}
 	return pfxCifrado, senhaCifrada, a1.Cert.NotAfter, nil
+}
+
+// CodificarPFXComCadeia reempacota chave, certificado e ACs intermediárias num .pfx moderno
+// (AES-256/PBKDF2), que o próprio Go consegue ler de volta.
+func CodificarPFXComCadeia(a1 *NFSeCertificadoA1, senha string) ([]byte, error) {
+	return pkcs12.Modern.Encode(a1.Chave, a1.Cert, a1.Cadeia, senha)
 }

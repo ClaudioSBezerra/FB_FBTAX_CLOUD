@@ -70,10 +70,18 @@ func NovoClienteSefin(ambiente int, a1 *NFSeCertificadoA1) (*ClienteSefin, error
 			return nil, fmt.Errorf("%s não contém certificados PEM válidos", nfseCaFileEnv)
 		}
 	}
+	cadeia := [][]byte{a1.Cert.Raw}
+	for _, ac := range a1.Cadeia {
+		cadeia = append(cadeia, ac.Raw)
+	}
+	tlsCert := tls.Certificate{Certificate: cadeia, PrivateKey: a1.Chave, Leaf: a1.Cert}
+	// GetClientCertificate (não Certificates): o servidor lista só as raízes ICP-Brasil como CAs
+	// aceitas, e o Go não envia o certificado quando o emissor dele não casa com a lista. Aqui o
+	// certificado, com a cadeia completada no upload, é sempre enviado e o servidor decide.
 	tr := &http.Transport{TLSClientConfig: &tls.Config{
-		MinVersion:   tls.VersionTLS12,
-		RootCAs:      pool,
-		Certificates: []tls.Certificate{{Certificate: [][]byte{a1.Cert.Raw}, PrivateKey: a1.Chave, Leaf: a1.Cert}},
+		MinVersion:           tls.VersionTLS12,
+		RootCAs:              pool,
+		GetClientCertificate: func(*tls.CertificateRequestInfo) (*tls.Certificate, error) { return &tlsCert, nil },
 	}}
 	return &ClienteSefin{Base: base, HTTP: &http.Client{Transport: tr, Timeout: sefinTimeout}}, nil
 }

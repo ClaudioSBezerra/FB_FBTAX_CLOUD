@@ -155,6 +155,20 @@ func NFSeCertificadoHandler(db *sql.DB) http.HandlerFunc {
 				nfseErro(w, http.StatusUnprocessableEntity, err.Error())
 				return
 			}
+			// O .pfx real costuma vir sem as ACs intermediárias e o servidor do governo rejeita o
+			// handshake: completa a cadeia via AIA e valida até uma raiz ICP-Brasil.
+			cadeia, err := completarCadeiaNFSe(r.Context(), a1.Cert, a1.Cadeia)
+			if err != nil {
+				log.Printf("[NFSe] cadeia do certificado: %v", err)
+				status, msg := mensagemErroCadeiaNFSe(err)
+				nfseErro(w, status, msg)
+				return
+			}
+			a1.Cadeia = cadeia
+			if pfx, err = services.CodificarPFXComCadeia(a1, senha); err != nil {
+				nfseErro(w, http.StatusInternalServerError, "erro ao reempacotar o certificado")
+				return
+			}
 			if err := services.ValidarCertificadoDoPrestador(a1.Cert, emp.CNPJ, time.Now()); err != nil {
 				nfseErro(w, http.StatusUnprocessableEntity, err.Error())
 				return
@@ -690,5 +704,34 @@ func NFSeCancelarHandler(db *sql.DB) http.HandlerFunc {
 		}
 		db.ExecContext(ctx, `UPDATE financeiro.nfse_emitidas SET status='cancelada', cancel_xml=$2, erro=NULL, updated_at=NOW() WHERE id=$1`, req.ID, xml)
 		nfseJSON(w, http.StatusOK, map[string]string{"id": req.ID, "status": "cancelada"})
+	}
+}
+
+// completarCadeiaNFSe é o ponto de chamada de services.CompletarCadeiaICPBrasil no upload.
+// Variável não exportada só para os testes do pacote validarem contra uma raiz de teste (não
+// existe chave de raiz ICP-Brasil real para gerar certificados de teste); em produção é sempre
+// a função real.
+var completarCadeiaNFSe = services.CompletarCadeiaICPBrasil
+
+// mensagemErroCadeiaNFSe mapeia os erros da cadeia para HTTP. As mensagens nunca trazem detalhe
+// técnico (URL, IP, saída do openssl): isso vai só para o log.
+func mensagemErroCadeiaNFSe(err error) (int, string) {
+	switch {
+	case errors.Is(err, services.ErrNFSeCadeiaAmbienteIndisponivel):
+		return http.StatusInternalServerError, "Não foi possível validar a cadeia do certificado — ambiente do servidor incompleto, contate o suporte"
+	case errors.Is(err, services.ErrNFSeCadeiaDownloadFalhou):
+		return http.StatusBadGateway, "Não foi possível baixar a cadeia de certificação da Autoridade Certificadora — tente novamente em alguns minutos"
+	case errors.Is(err, services.ErrNFSeCadeiaVencida):
+		return http.StatusBadRequest, "O certificado ou uma Autoridade Certificadora da cadeia está vencido — envie um certificado válido"
+	case errors.Is(err, services.ErrNFSeCadeiaAIAEsquemaNaoSuportado):
+		return http.StatusBadRequest, "O endereço da AC indicado no certificado usa um esquema não suportado (só http/https) — verifique com a sua certificadora"
+	case errors.Is(err, services.ErrNFSeCadeiaAIAInvalida):
+		return http.StatusBadRequest, "Não foi possível obter as ACs intermediárias pelo endereço indicado no certificado — verifique com a sua certificadora"
+	case errors.Is(err, services.ErrNFSeCadeiaAIABloqueada):
+		return http.StatusBadRequest, "O endereço da Autoridade Certificadora informado no certificado não é permitido"
+	case errors.Is(err, services.ErrNFSeCadeiaNaoICPBrasil):
+		return http.StatusBadRequest, "O certificado não é ICP-Brasil (a cadeia não termina numa raiz ICP-Brasil) — envie um certificado A1 e-CNPJ de AC credenciada"
+	default:
+		return http.StatusBadRequest, "O certificado não pôde ter a cadeia de certificação validada até uma raiz ICP-Brasil"
 	}
 }
