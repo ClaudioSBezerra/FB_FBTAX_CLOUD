@@ -14,6 +14,8 @@ import (
 	"fmt"
 	"io"
 	"math/big"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -581,5 +583,40 @@ func TestNFSeEmitidas_MesmoIdEmAmbientesDistintos(t *testing.T) {
 	}
 	if err := ins(1); err == nil {
 		t.Fatal("repetir o mesmo DPS no mesmo ambiente deveria ser recusado")
+	}
+}
+
+func TestNFSeObterDANFSe_RespostasDoServidor(t *testing.T) {
+	chave := "52014052238149716000128000000000000126119042182716"
+	mux := http.NewServeMux()
+	mux.HandleFunc("/danfse/"+chave, func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/pdf")
+		io.WriteString(w, "%PDF-1.4 teste")
+	})
+	mux.HandleFunc("/danfse/52014052238149716000128000000000000126119042182717", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+		io.WriteString(w, `{"erro":{"codigo":"E1","descricao":"x"}}`)
+	})
+	mux.HandleFunc("/danfse/52014052238149716000128000000000000126119042182718", func(w http.ResponseWriter, r *http.Request) {
+		time.Sleep(300 * time.Millisecond)
+	})
+	srv := httptest.NewTLSServer(mux)
+	defer srv.Close()
+	cli := &ClienteSefin{BaseDANFSe: srv.URL + "/danfse", HTTP: srv.Client()}
+
+	corpo, ct, status, err := cli.ObterDANFSe(context.Background(), chave)
+	if err != nil || status != 200 || ct != "application/pdf" || !strings.HasPrefix(string(corpo), "%PDF") {
+		t.Fatalf("PDF: %v %d %s %q", err, status, ct, corpo)
+	}
+	if _, _, status, err := cli.ObterDANFSe(context.Background(), "52014052238149716000128000000000000126119042182717"); err != nil || status != 404 {
+		t.Fatalf("404: %v %d", err, status)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+	if _, _, _, err := cli.ObterDANFSe(ctx, "52014052238149716000128000000000000126119042182718"); err == nil {
+		t.Fatal("travamento deveria virar erro por tempo, não panic")
+	}
+	if _, _, _, err := cli.ObterDANFSe(context.Background(), "123"); err == nil {
+		t.Fatal("chave curta deveria ser recusada")
 	}
 }
