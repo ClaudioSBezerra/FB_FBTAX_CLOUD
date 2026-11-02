@@ -27,6 +27,10 @@ const (
 	SefinBaseProducao         = "https://sefin.nfse.gov.br/SefinNacional"
 	SefinBaseProducaoRestrita = "https://sefin.producaorestrita.nfse.gov.br/API/SefinNacional"
 
+	// API de parametrização (parâmetros municipais e convênio) fica no ADN, não na Sefin.
+	ParametrizacaoBaseProducao         = "https://adn.nfse.gov.br/parametrizacao"
+	ParametrizacaoBaseProducaoRestrita = "https://adn.producaorestrita.nfse.gov.br/parametrizacao"
+
 	sefinTimeout   = 40 * time.Second
 	sefinMaxCorpo  = 4 << 20
 	nfseCaFileEnv  = "NFSE_TLS_CA_FILE"
@@ -46,8 +50,9 @@ func SefinBaseURL(ambiente int) (string, error) {
 
 // ClienteSefin fala com a API em um ambiente, autenticado com o A1.
 type ClienteSefin struct {
-	Base string
-	HTTP *http.Client
+	Base      string
+	BaseParam string // API de parametrização (ADN)
+	HTTP      *http.Client
 }
 
 // NovoClienteSefin monta o cliente mTLS. NFSE_TLS_CA_FILE (opcional) acrescenta CAs ao pool do
@@ -87,7 +92,11 @@ func NovoClienteSefin(ambiente int, a1 *NFSeCertificadoA1) (*ClienteSefin, error
 		Renegotiation:        tls.RenegotiateOnceAsClient,
 		GetClientCertificate: func(*tls.CertificateRequestInfo) (*tls.Certificate, error) { return &tlsCert, nil },
 	}}
-	return &ClienteSefin{Base: base, HTTP: &http.Client{Transport: tr, Timeout: sefinTimeout}}, nil
+	baseParam := ParametrizacaoBaseProducaoRestrita
+	if ambiente == 1 {
+		baseParam = ParametrizacaoBaseProducao
+	}
+	return &ClienteSefin{Base: base, BaseParam: baseParam, HTTP: &http.Client{Transport: tr, Timeout: sefinTimeout}}, nil
 }
 
 // SefinErro é uma rejeição da API (código e descrição).
@@ -159,7 +168,11 @@ func (c *ClienteSefin) postJSON(ctx context.Context, caminho string, corpo any) 
 }
 
 func (c *ClienteSefin) fazer(ctx context.Context, metodo, caminho string, corpo []byte) (*RespostaSefin, error) {
-	req, err := http.NewRequestWithContext(ctx, metodo, c.Base+caminho, bytes.NewReader(corpo))
+	return c.fazerEm(ctx, c.Base, metodo, caminho, corpo)
+}
+
+func (c *ClienteSefin) fazerEm(ctx context.Context, base, metodo, caminho string, corpo []byte) (*RespostaSefin, error) {
+	req, err := http.NewRequestWithContext(ctx, metodo, base+caminho, bytes.NewReader(corpo))
 	if err != nil {
 		return nil, err
 	}
@@ -320,5 +333,5 @@ func (c *ClienteSefin) ConsultarConvenio(ctx context.Context, codMunicipio strin
 	if len(codMunicipio) != 7 || soDigitos(codMunicipio) != codMunicipio {
 		return nil, errors.New("código IBGE deve ter 7 dígitos")
 	}
-	return c.fazer(ctx, http.MethodGet, "/parametros_municipais/"+codMunicipio+"/convenio", nil)
+	return c.fazerEm(ctx, c.BaseParam, http.MethodGet, "/parametros_municipais/"+codMunicipio+"/convenio", nil)
 }
