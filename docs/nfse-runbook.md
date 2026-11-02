@@ -42,6 +42,21 @@ Emissão direta na Sefin Nacional (sem provedor), com o A1 da Fortes Bezerra
 - Se a resposta da Sefin se perder (nota `enviada`), use **Consultar** antes de reemitir.
 - Uma nota viva por contrato e competência (índice único).
 
+## Leiautes por ambiente
+
+A produção restrita valida contra um XSD **mais novo** (20/10/2026) que o de produção (20260209,
+o das notas reais). O gerador escolhe pelo ambiente (`nfseLeiauteFinNFSeEmInfDPS`):
+
+| Ponto | Produção (1) | Produção restrita (2) |
+|---|---|---|
+| `finNFSe` | dentro de `IBSCBS` | em `infDPS`, após `tpEmit` |
+| `cServ` | `cTribNac, xDescServ, cNBS` | `cTribNac, cNBS, xDescServ` |
+| CST/cClassTrib | dentro de `gIBSCBS` | direto em `trib` |
+
+Quando a Sefin promover o leiaute novo à produção, ligar o novo leiaute também para o ambiente 1
+e revalidar contra o XSD de produção baixado na época. O evento de cancelamento (Anexo II) pode ter
+mudanças parecidas; confira no primeiro cancelamento em restrita.
+
 ## Limites conhecidos
 
 - Perfil fixo: serviço 17.01.01 / NBS 114013900, ISSQN no DAS (Simples), IBS/CBS informativo
