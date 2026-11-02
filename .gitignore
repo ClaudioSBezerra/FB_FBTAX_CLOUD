@@ -58,3 +58,4 @@ tests/log.txt
 # Go binary artifacts
 backend/fb_cloud
 backend/fbtax_cloud
+_bmad/config.user.toml
