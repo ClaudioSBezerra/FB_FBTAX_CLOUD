@@ -451,6 +451,7 @@ func NFSeEmitirHandler(db *sql.DB) http.HandlerFunc {
 
 		cli, err := services.NovoClienteSefin(emp.Ambiente, a1)
 		if err != nil {
+			log.Printf("[NFSe] cliente Sefin: %v", err)
 			marcarNFSe(ctx, db, id, "rejeitada", "", "", "", err.Error())
 			nfseErro(w, http.StatusBadGateway, err.Error())
 			return
@@ -461,7 +462,8 @@ func NFSeEmitirHandler(db *sql.DB) http.HandlerFunc {
 		if err != nil {
 			// Resultado desconhecido: a nota fica 'enviada' e deve ser reconciliada em /nfse/consultar.
 			db.ExecContext(ctx, `UPDATE financeiro.nfse_emitidas SET erro=$2, updated_at=NOW() WHERE id=$1`, id, "falha de comunicação (resultado desconhecido, use Consultar): "+err.Error())
-			nfseErro(w, http.StatusBadGateway, "falha de comunicação com a Sefin; o resultado é desconhecido — use Consultar antes de reemitir")
+			log.Printf("[NFSe] falha de comunicação ao enviar DPS %s: %v", g.ID, err)
+			nfseErro(w, http.StatusBadGateway, "falha de comunicação com a Sefin ("+err.Error()+"); o resultado é desconhecido — use Consultar antes de reemitir")
 			return
 		}
 		if !resp.Autorizada() {
