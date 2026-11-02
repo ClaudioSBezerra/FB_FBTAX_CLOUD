@@ -25,6 +25,7 @@ interface Cliente {
   bairro?: string
   municipio?: string
   uf?: string
+  cod_ibge?: string
 }
 
 function formatCNPJ(cnpj: string): string {
@@ -36,7 +37,7 @@ function formatCNPJ(cnpj: string): string {
 const emptyCliente = (): Cliente => ({
   razao_social: '', cnpj: '', ativo: true,
   cep: '', logradouro: '', numero: '', complemento: '',
-  bairro: '', municipio: '', uf: '',
+  bairro: '', municipio: '', uf: '', cod_ibge: '',
   email: '', telefone: '', responsavel: '',
 })
 
@@ -77,6 +78,13 @@ export default function ClientesPage() {
     return () => { if (timerRef.current) clearTimeout(timerRef.current) }
   }, [busca, statusFiltro])
 
+  const buscarIBGE = async () => {
+    const digits = (editando?.cep || '').replace(/\D/g, '')
+    const result = digits.length === 8 ? await buscarCEP(digits) : null
+    if (!result?.ibge) return toast.error('Informe um CEP válido para buscar o código IBGE')
+    setEditando(prev => prev ? { ...prev, cod_ibge: result.ibge } : prev)
+  }
+
   const handleCEPBlur = async () => {
     if (!editando) return
     const digits = (editando.cep || '').replace(/\D/g, '')
@@ -91,6 +99,7 @@ export default function ClientesPage() {
           bairro: result.bairro || prev.bairro,
           municipio: result.localidade || prev.municipio,
           uf: result.uf || prev.uf,
+          cod_ibge: result.ibge || prev.cod_ibge,
         } : prev)
       } else {
         toast.error('CEP não encontrado')
@@ -284,6 +293,20 @@ export default function ClientesPage() {
                         value={editando.uf || ''}
                         onChange={e => setEditando(prev => prev ? { ...prev, uf: e.target.value.toUpperCase() } : prev)}
                       />
+                    </div>
+                  </div>
+                  <div>
+                    <Label htmlFor="cod_ibge">Código IBGE do município (usado na NFS-e)</Label>
+                    <div className="flex gap-2">
+                      <Input
+                        id="cod_ibge"
+                        inputMode="numeric"
+                        maxLength={7}
+                        placeholder="5201405"
+                        value={editando.cod_ibge || ''}
+                        onChange={e => setEditando(prev => prev ? { ...prev, cod_ibge: e.target.value.replace(/\D/g, '') } : prev)}
+                      />
+                      <Button type="button" variant="outline" onClick={buscarIBGE}>Buscar pelo CEP</Button>
                     </div>
                   </div>
                 </div>

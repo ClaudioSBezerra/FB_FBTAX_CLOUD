@@ -183,3 +183,51 @@ func TestNFSeFluxoSemEnvio(t *testing.T) {
 		t.Fatal("recusa de produção não pode ter reservado número")
 	}
 }
+
+// O código IBGE do município precisa ser gravado e devolvido pelo cadastro de clientes.
+func TestNFSeClientes_CodIBGEGravaEDevolve(t *testing.T) {
+	db := nfseTestDB(t)
+	h := ClientesHandler(db)
+	cnpj := "10230480001960"
+	db.Exec(`DELETE FROM financeiro.clientes WHERE cnpj = $1`, cnpj)
+	t.Cleanup(func() { db.Exec(`DELETE FROM financeiro.clientes WHERE cnpj = $1`, cnpj) })
+
+	novo := func(ibge string) []byte {
+		b, _ := json.Marshal(map[string]any{"razao_social": "CLIENTE TESTE", "cnpj": cnpj, "ativo": true,
+			"cep": "74985240", "logradouro": "RUA A", "numero": "1", "bairro": "B", "municipio": "Aparecida", "uf": "GO", "cod_ibge": ibge})
+		return b
+	}
+	if rr := chamar(h, http.MethodPost, "/", novo("52014"), "application/json"); rr.Code != http.StatusBadRequest {
+		t.Fatalf("IBGE com 5 dígitos deveria dar 400, veio %d", rr.Code)
+	}
+	if rr := chamar(h, http.MethodPost, "/", novo("5201405"), "application/json"); rr.Code >= 300 {
+		t.Fatalf("criar: %d %s", rr.Code, rr.Body)
+	}
+	var lista []struct {
+		ID      string `json:"id"`
+		CodIBGE string `json:"cod_ibge"`
+		CNPJ    string `json:"cnpj"`
+	}
+	rr := chamar(h, http.MethodGet, "/?q="+cnpj, nil, "")
+	if err := json.Unmarshal(rr.Body.Bytes(), &lista); err != nil || len(lista) != 1 || lista[0].CodIBGE != "5201405" {
+		t.Fatalf("listagem sem IBGE: %d %s", rr.Code, rr.Body)
+	}
+	id := lista[0].ID
+	var um struct {
+		CodIBGE string `json:"cod_ibge"`
+	}
+	rr = chamar(h, http.MethodGet, "/?id="+id, nil, "")
+	if json.Unmarshal(rr.Body.Bytes(), &um) != nil || um.CodIBGE != "5201405" {
+		t.Fatalf("busca por id sem IBGE: %s", rr.Body)
+	}
+	// Edição: troca e depois limpa.
+	b, _ := json.Marshal(map[string]any{"id": id, "razao_social": "CLIENTE TESTE", "ativo": true, "cod_ibge": "2611606"})
+	if rr := chamar(h, http.MethodPut, "/", b, "application/json"); rr.Code >= 300 {
+		t.Fatalf("editar: %d %s", rr.Code, rr.Body)
+	}
+	var ibge sql.NullString
+	db.QueryRow(`SELECT cod_ibge FROM financeiro.clientes WHERE id=$1`, id).Scan(&ibge)
+	if ibge.String != "2611606" {
+		t.Fatalf("IBGE não foi atualizado: %q", ibge.String)
+	}
+}

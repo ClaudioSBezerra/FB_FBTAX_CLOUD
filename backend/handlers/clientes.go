@@ -23,6 +23,7 @@ type ClienteRequest struct {
 	Bairro      string `json:"bairro,omitempty"`
 	Municipio   string `json:"municipio,omitempty"`
 	UF          string `json:"uf,omitempty"`
+	CodIBGE     string `json:"cod_ibge,omitempty"` // IBGE do município (7 dígitos), usado no DPS da NFS-e
 }
 
 type ClienteCNPJResponse struct {
@@ -49,6 +50,7 @@ type ClienteResponse struct {
 	Bairro      string                `json:"bairro,omitempty"`
 	Municipio   string                `json:"municipio,omitempty"`
 	UF          string                `json:"uf,omitempty"`
+	CodIBGE     string                `json:"cod_ibge,omitempty"`
 	Cnpjs       []ClienteCNPJResponse `json:"cnpjs,omitempty"`
 }
 
@@ -94,7 +96,7 @@ func handleListClientes(w http.ResponseWriter, r *http.Request, db *sql.DB) {
 		c.ativo, c.created_at,
 		COALESCE(c.cep,''), COALESCE(c.logradouro,''), COALESCE(c.numero,''),
 		COALESCE(c.complemento,''), COALESCE(c.bairro,''), COALESCE(c.municipio,''),
-		COALESCE(c.uf,'')
+		COALESCE(c.uf,''), COALESCE(c.cod_ibge,'')
 	FROM financeiro.clientes c
 	LEFT JOIN financeiro.cliente_cnpjs cc ON cc.cliente_id = c.id
 	WHERE 1=1`
@@ -130,7 +132,7 @@ func handleListClientes(w http.ResponseWriter, r *http.Request, db *sql.DB) {
 		if err := rows.Scan(
 			&c.ID, &c.RazaoSocial, &c.CNPJ, &c.Email, &c.Telefone, &c.Responsavel,
 			&c.Ativo, &c.CreatedAt,
-			&c.CEP, &c.Logradouro, &c.Numero, &c.Complemento, &c.Bairro, &c.Municipio, &c.UF,
+			&c.CEP, &c.Logradouro, &c.Numero, &c.Complemento, &c.Bairro, &c.Municipio, &c.UF, &c.CodIBGE,
 		); err != nil {
 			http.Error(w, "internal server error", http.StatusInternalServerError)
 			return
@@ -147,14 +149,14 @@ func handleListClientes(w http.ResponseWriter, r *http.Request, db *sql.DB) {
 func handleGetCliente(w http.ResponseWriter, r *http.Request, db *sql.DB) {
 	id := r.URL.Query().Get("id")
 	var c ClienteResponse
-	var email, telefone, responsavel, cep, logradouro, numero, complemento, bairro, municipio, uf sql.NullString
+	var email, telefone, responsavel, cep, logradouro, numero, complemento, bairro, municipio, uf, codIBGE sql.NullString
 	err := db.QueryRow(`
 		SELECT id, razao_social, cnpj, email, telefone, responsavel, ativo, created_at,
-		       cep, logradouro, numero, complemento, bairro, municipio, uf
+		       cep, logradouro, numero, complemento, bairro, municipio, uf, cod_ibge
 		FROM financeiro.clientes WHERE id = $1
 	`, id).Scan(
 		&c.ID, &c.RazaoSocial, &c.CNPJ, &email, &telefone, &responsavel, &c.Ativo, &c.CreatedAt,
-		&cep, &logradouro, &numero, &complemento, &bairro, &municipio, &uf,
+		&cep, &logradouro, &numero, &complemento, &bairro, &municipio, &uf, &codIBGE,
 	)
 	if err == sql.ErrNoRows {
 		w.WriteHeader(http.StatusNotFound)
@@ -175,6 +177,7 @@ func handleGetCliente(w http.ResponseWriter, r *http.Request, db *sql.DB) {
 	c.Bairro = bairro.String
 	c.Municipio = municipio.String
 	c.UF = uf.String
+	c.CodIBGE = codIBGE.String
 
 	rows, err := db.Query(`
 		SELECT id, cliente_id, cnpj, COALESCE(descricao,''), is_principal
@@ -197,10 +200,20 @@ func handleGetCliente(w http.ResponseWriter, r *http.Request, db *sql.DB) {
 	json.NewEncoder(w).Encode(c)
 }
 
+// normalizarCodIBGE mantém só os dígitos do código IBGE; vazio é válido (campo opcional).
+func normalizarCodIBGE(req *ClienteRequest) bool {
+	req.CodIBGE = onlyDigits(req.CodIBGE)
+	return req.CodIBGE == "" || len(req.CodIBGE) == 7
+}
+
 func handlePostCliente(w http.ResponseWriter, r *http.Request, db *sql.DB) {
 	var req ClienteRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "invalid request", http.StatusBadRequest)
+		return
+	}
+	if !normalizarCodIBGE(&req) {
+		http.Error(w, "cod_ibge deve ter 7 dígitos", http.StatusBadRequest)
 		return
 	}
 	if req.RazaoSocial == "" || req.CNPJ == "" {
@@ -219,10 +232,10 @@ func handlePostCliente(w http.ResponseWriter, r *http.Request, db *sql.DB) {
 	err = tx.QueryRow(`
 		INSERT INTO financeiro.clientes
 		(razao_social, cnpj, email, telefone, responsavel, ativo,
-		 cep, logradouro, numero, complemento, bairro, municipio, uf)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) RETURNING id
+		 cep, logradouro, numero, complemento, bairro, municipio, uf, cod_ibge)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,NULLIF($14,'')) RETURNING id
 	`, req.RazaoSocial, req.CNPJ, req.Email, req.Telefone, req.Responsavel, req.Ativo,
-		req.CEP, req.Logradouro, req.Numero, req.Complemento, req.Bairro, req.Municipio, req.UF,
+		req.CEP, req.Logradouro, req.Numero, req.Complemento, req.Bairro, req.Municipio, req.UF, req.CodIBGE,
 	).Scan(&id)
 	if err != nil {
 		http.Error(w, "error creating cliente", http.StatusInternalServerError)
@@ -254,6 +267,10 @@ func handlePutCliente(w http.ResponseWriter, r *http.Request, db *sql.DB) {
 		http.Error(w, "invalid request", http.StatusBadRequest)
 		return
 	}
+	if !normalizarCodIBGE(&req) {
+		http.Error(w, "cod_ibge deve ter 7 dígitos", http.StatusBadRequest)
+		return
+	}
 	if req.ID == "" {
 		http.Error(w, "id required", http.StatusBadRequest)
 		return
@@ -262,10 +279,10 @@ func handlePutCliente(w http.ResponseWriter, r *http.Request, db *sql.DB) {
 		UPDATE financeiro.clientes
 		SET razao_social=$1, email=$2, telefone=$3, responsavel=$4, ativo=$5,
 		    cep=$6, logradouro=$7, numero=$8, complemento=$9, bairro=$10, municipio=$11, uf=$12,
-		    updated_at=CURRENT_TIMESTAMP
-		WHERE id=$13
+		    cod_ibge=NULLIF($13,''), updated_at=CURRENT_TIMESTAMP
+		WHERE id=$14
 	`, req.RazaoSocial, req.Email, req.Telefone, req.Responsavel, req.Ativo,
-		req.CEP, req.Logradouro, req.Numero, req.Complemento, req.Bairro, req.Municipio, req.UF,
+		req.CEP, req.Logradouro, req.Numero, req.Complemento, req.Bairro, req.Municipio, req.UF, req.CodIBGE,
 		req.ID,
 	)
 	if err != nil {
