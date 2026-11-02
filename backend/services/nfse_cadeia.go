@@ -735,6 +735,15 @@ func parseCertificadosAIA(ctx context.Context, body []byte) ([]*x509.Certificate
 	if c, err := x509.ParseCertificate(body); err == nil {
 		return []*x509.Certificate{c}, nil
 	}
+	// DER seguido só de espaço/quebra de linha: lê o primeiro elemento ASN.1 pelo próprio
+	// tamanho e confere que o resto é espaço. Aparar antes (TrimSpace) comeria o último byte do
+	// certificado quando a assinatura termina em 0x0a/0x0d/0x20/0x09 (~1,6% dos certificados).
+	var raw asn1.RawValue
+	if resto, err := asn1.Unmarshal(body, &raw); err == nil && len(bytes.TrimSpace(resto)) == 0 {
+		if c, err := x509.ParseCertificate(raw.FullBytes); err == nil {
+			return []*x509.Certificate{c}, nil
+		}
+	}
 	if c, err := x509.ParseCertificate(aparado); err == nil {
 		return []*x509.Certificate{c}, nil
 	}
