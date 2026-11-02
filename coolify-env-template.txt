@@ -9,6 +9,7 @@ PORT=8081
 ENVIRONMENT=production
 LOG_LEVEL=info
 JWT_SECRET=change-me-super-secure-jwt-secret-2026
+FINANCEIRO_SECRET=troque-por-um-texto-longo-e-secreto
 
 # ========================================
 # DATABASE (Hostinger PostgreSQL)
