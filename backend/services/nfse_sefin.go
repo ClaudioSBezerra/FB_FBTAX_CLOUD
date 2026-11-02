@@ -31,6 +31,10 @@ const (
 	ParametrizacaoBaseProducao         = "https://adn.nfse.gov.br/parametrizacao"
 	ParametrizacaoBaseProducaoRestrita = "https://adn.producaorestrita.nfse.gov.br/parametrizacao"
 
+	// O DANFSe também foi movido da Sefin para o ADN.
+	DANFSeBaseProducao         = "https://adn.nfse.gov.br/danfse"
+	DANFSeBaseProducaoRestrita = "https://adn.producaorestrita.nfse.gov.br/danfse"
+
 	sefinTimeout   = 40 * time.Second
 	sefinMaxCorpo  = 4 << 20
 	nfseCaFileEnv  = "NFSE_TLS_CA_FILE"
@@ -50,9 +54,10 @@ func SefinBaseURL(ambiente int) (string, error) {
 
 // ClienteSefin fala com a API em um ambiente, autenticado com o A1.
 type ClienteSefin struct {
-	Base      string
-	BaseParam string // API de parametrização (ADN)
-	HTTP      *http.Client
+	Base       string
+	BaseParam  string // API de parametrização (ADN)
+	BaseDANFSe string // API do DANFSe (ADN)
+	HTTP       *http.Client
 }
 
 // NovoClienteSefin monta o cliente mTLS. NFSE_TLS_CA_FILE (opcional) acrescenta CAs ao pool do
@@ -92,11 +97,11 @@ func NovoClienteSefin(ambiente int, a1 *NFSeCertificadoA1) (*ClienteSefin, error
 		Renegotiation:        tls.RenegotiateOnceAsClient,
 		GetClientCertificate: func(*tls.CertificateRequestInfo) (*tls.Certificate, error) { return &tlsCert, nil },
 	}}
-	baseParam := ParametrizacaoBaseProducaoRestrita
+	baseParam, baseDANFSe := ParametrizacaoBaseProducaoRestrita, DANFSeBaseProducaoRestrita
 	if ambiente == 1 {
-		baseParam = ParametrizacaoBaseProducao
+		baseParam, baseDANFSe = ParametrizacaoBaseProducao, DANFSeBaseProducao
 	}
-	return &ClienteSefin{Base: base, BaseParam: baseParam, HTTP: &http.Client{Transport: tr, Timeout: sefinTimeout}}, nil
+	return &ClienteSefin{Base: base, BaseParam: baseParam, BaseDANFSe: baseDANFSe, HTTP: &http.Client{Transport: tr, Timeout: sefinTimeout}}, nil
 }
 
 // SefinErro é uma rejeição da API (código e descrição).
@@ -343,4 +348,27 @@ func (c *ClienteSefin) ConsultarConvenio(ctx context.Context, codMunicipio strin
 		return nil, errors.New("código IBGE deve ter 7 dígitos")
 	}
 	return c.fazerEm(ctx, c.BaseParam, http.MethodGet, "/parametros_municipais/"+codMunicipio+"/convenio", nil)
+}
+
+// ObterDANFSe baixa o PDF do DANFSe da nota (GET /danfse/{chave} no ADN). Devolve o corpo bruto,
+// o content-type e o status HTTP; quem chama confere se veio um PDF.
+func (c *ClienteSefin) ObterDANFSe(ctx context.Context, chave string) (corpo []byte, contentType string, status int, err error) {
+	if len(chave) != 50 || soDigitos(chave) != chave {
+		return nil, "", 0, errors.New("chave de acesso deve ter 50 dígitos")
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.BaseDANFSe+"/"+chave, nil)
+	if err != nil {
+		return nil, "", 0, err
+	}
+	req.Header.Set("Accept", "application/pdf")
+	resp, err := c.HTTP.Do(req)
+	if err != nil {
+		return nil, "", 0, fmt.Errorf("danfse: %w", err)
+	}
+	defer resp.Body.Close()
+	corpo, err = io.ReadAll(io.LimitReader(resp.Body, 8<<20))
+	if err != nil {
+		return nil, "", 0, fmt.Errorf("danfse: ler resposta: %w", err)
+	}
+	return corpo, resp.Header.Get("Content-Type"), resp.StatusCode, nil
 }

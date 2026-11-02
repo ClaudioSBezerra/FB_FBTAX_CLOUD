@@ -12,6 +12,7 @@ package handlers
 //   - PFX e senha nunca são devolvidos por nenhuma rota nem escritos em log.
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
 	"encoding/json"
@@ -795,5 +796,54 @@ func NFSeConvenioHandler(db *sql.DB) http.HandlerFunc {
 			out[nome] = map[string]any{"http": resp.Status, "resposta": corpo}
 		}
 		nfseJSON(w, http.StatusOK, out)
+	}
+}
+
+// NFSeDANFSeHandler baixa o DANFSe (PDF) de uma nota autorizada — GET /api/financeiro/nfse/danfse?id=.
+// O serviço fica no ADN e exige o certificado do prestador (mTLS).
+func NFSeDANFSeHandler(db *sql.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		id := r.URL.Query().Get("id")
+		if r.Method != http.MethodGet || !reUUIDNFS.MatchString(id) {
+			nfseErro(w, http.StatusBadRequest, "id inválido")
+			return
+		}
+		ctx, cancel := context.WithTimeout(r.Context(), 60*time.Second)
+		defer cancel()
+		var empID string
+		var amb int
+		var chave sql.NullString
+		if err := db.QueryRowContext(ctx, `SELECT empresa_id, ambiente, chave_acesso FROM financeiro.nfse_emitidas WHERE id=$1`, id).Scan(&empID, &amb, &chave); err != nil || !chave.Valid {
+			nfseErro(w, http.StatusNotFound, "nota sem chave de acesso")
+			return
+		}
+		a1, err := carregarA1(ctx, db, empID)
+		if err != nil {
+			nfseErro(w, http.StatusConflict, err.Error())
+			return
+		}
+		cli, err := services.NovoClienteSefin(amb, a1)
+		if err != nil {
+			nfseErro(w, http.StatusBadGateway, err.Error())
+			return
+		}
+		corpo, ct, status, err := cli.ObterDANFSe(ctx, chave.String)
+		if err != nil {
+			log.Printf("[NFSe] DANFSe: %v", err)
+			nfseErro(w, http.StatusBadGateway, "falha ao buscar o DANFSe: "+err.Error())
+			return
+		}
+		if status != http.StatusOK || !bytes.HasPrefix(corpo, []byte("%PDF")) {
+			trecho := string(corpo)
+			if r := []rune(trecho); len(r) > 300 {
+				trecho = string(r[:300])
+			}
+			log.Printf("[NFSe] DANFSe da chave %s: HTTP %d (%s): %s", chave.String, status, ct, trecho)
+			nfseErro(w, http.StatusBadGateway, fmt.Sprintf("a Sefin não devolveu o PDF (HTTP %d). Use o portal para imprimir: https://www.nfse.gov.br/ConsultaPublica/?tpc=1&chave=%s", status, chave.String))
+			return
+		}
+		w.Header().Set("Content-Type", "application/pdf")
+		w.Header().Set("Content-Disposition", `attachment; filename="danfse-`+chave.String+`.pdf"`)
+		w.Write(corpo)
 	}
 }

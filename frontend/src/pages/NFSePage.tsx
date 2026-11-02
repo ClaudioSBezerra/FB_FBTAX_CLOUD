@@ -176,6 +176,18 @@ export default function NFSePage() {
     }
   }
 
+  // Âncora comum não envia o token de login: baixa com fetch (que leva o Authorization) e salva o blob.
+  const baixar = async (url: string, nome: string) => {
+    const res = await fetch(url)
+    if (!res.ok) return toast.error(await lerErro(res))
+    const blob = await res.blob()
+    const a = document.createElement('a')
+    a.href = URL.createObjectURL(blob)
+    a.download = nome
+    a.click()
+    URL.revokeObjectURL(a.href)
+  }
+
   const acao = async (n: Nota, tipo: 'consultar' | 'cancelar') => {
     let body: string | undefined
     if (tipo === 'cancelar') {
@@ -294,9 +306,10 @@ export default function NFSePage() {
                     <td><Badge variant={n.status === 'autorizada' ? 'default' : n.status === 'rejeitada' ? 'destructive' : 'secondary'}>{n.status}</Badge>{n.erro && <div className="text-xs text-red-600 max-w-xs">{n.erro}</div>}</td>
                     <td className="space-x-1 whitespace-nowrap">
                       {n.status === 'enviada' && <Button size="sm" variant="outline" onClick={() => acao(n, 'consultar')}>Consultar</Button>}
-                      {n.status === 'autorizada' && <>
-                        <a className="underline" href={`/api/financeiro/nfse/xml?id=${n.id}&tipo=nfse`}>XML</a>
-                        <Button size="sm" variant="outline" onClick={() => acao(n, 'cancelar')}>Cancelar</Button>
+                      {(n.status === 'autorizada' || n.status === 'cancelada') && <>
+                        <Button size="sm" variant="outline" onClick={() => baixar(`/api/financeiro/nfse/xml?id=${n.id}&tipo=nfse`, `nfse-${n.chave_acesso}.xml`)}>XML</Button>
+                        <Button size="sm" variant="outline" onClick={() => baixar(`/api/financeiro/nfse/danfse?id=${n.id}`, `danfse-${n.chave_acesso}.pdf`)}>DANFSe</Button>
+                        {n.status === 'autorizada' && <Button size="sm" variant="outline" onClick={() => acao(n, 'cancelar')}>Cancelar</Button>}
                       </>}
                     </td>
                   </tr>

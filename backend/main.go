@@ -396,6 +396,7 @@ func main() {
 	http.HandleFunc("/api/financeiro/nfse/emitir",        withAuth(handlers.NFSeEmitirHandler, "admin"))
 	http.HandleFunc("/api/financeiro/nfse/consultar",     withAuth(handlers.NFSeConsultarHandler, "admin"))
 	http.HandleFunc("/api/financeiro/nfse/cancelar",      withAuth(handlers.NFSeCancelarHandler, "admin"))
+	http.HandleFunc("/api/financeiro/nfse/danfse",        withAuth(handlers.NFSeDANFSeHandler, "admin"))
 	http.HandleFunc("/api/financeiro/nfse/xml",           withAuth(handlers.NFSeXMLHandler, "admin"))
 	http.HandleFunc("/api/financeiro/nfse",               withAuth(handlers.NFSeListHandler, "admin"))
 
