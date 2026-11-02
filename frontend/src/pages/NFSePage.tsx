@@ -57,11 +57,14 @@ interface Nota {
 }
 
 async function lerErro(res: Response): Promise<string> {
+  const texto = await res.text().catch(() => '')
   try {
-    const j = await res.json()
+    const j = JSON.parse(texto)
     return j.erro || j.error || `HTTP ${res.status}`
   } catch {
-    return `HTTP ${res.status}`
+    // Corpo que não é JSON (ex.: 502 do proxy): mostra um trecho para diagnóstico.
+    const limpo = texto.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 200)
+    return `HTTP ${res.status}${limpo ? ': ' + limpo : ' (sem corpo — resposta do proxy, não do sistema)'}`
   }
 }
 

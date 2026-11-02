@@ -827,7 +827,13 @@ func NFSeDANFSeHandler(db *sql.DB) http.HandlerFunc {
 			nfseErro(w, http.StatusBadGateway, err.Error())
 			return
 		}
-		corpo, ct, status, err := cli.ObterDANFSe(ctx, chave.String)
+		// Limite curto: o proxy da frente corta respostas lentas com um 502 sem corpo.
+		dctx, dcancel := context.WithTimeout(ctx, 25*time.Second)
+		defer dcancel()
+		inicio := time.Now()
+		log.Printf("[NFSe] DANFSe: buscando chave %s (ambiente %d)", chave.String, amb)
+		corpo, ct, status, err := cli.ObterDANFSe(dctx, chave.String)
+		log.Printf("[NFSe] DANFSe: resposta em %s (HTTP %d, %d bytes, %s)", time.Since(inicio).Round(time.Millisecond), status, len(corpo), ct)
 		if err != nil {
 			log.Printf("[NFSe] DANFSe: %v", err)
 			nfseErro(w, http.StatusBadGateway, "falha ao buscar o DANFSe: "+err.Error())
