@@ -297,7 +297,7 @@ func AssinarPedidoCancelamento(p PedidoCancelamento, a1 *NFSeCertificadoA1) (str
 	if err != nil {
 		return "", err
 	}
-	return "<pedRegEvento xmlns=\"" + NFSeNamespace + "\" versao=\"" + p.Versao + "\">" + p.InfPed + sig + "</pedRegEvento>", nil
+	return XMLDeclaracao + "<pedRegEvento xmlns=\"" + NFSeNamespace + "\" versao=\"" + p.Versao + "\">" + p.InfPed + sig + "</pedRegEvento>", nil
 }
 
 func truncarTexto(s string, n int) string {

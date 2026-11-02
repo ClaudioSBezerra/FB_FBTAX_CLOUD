@@ -78,7 +78,7 @@ func gerar(t *testing.T, d DPSDados) DPSGerado {
 // Matriz: DPS feliz + nome com & + complemento com espaços repetidos.
 func TestNFSeGerarDPS_IdenticoNotaReal(t *testing.T) {
 	g := gerar(t, dadosNota1())
-	if got, want := g.XMLNaoAssinado(), lerFixture(t); got != want {
+	if got, want := g.XMLNaoAssinado(), XMLDeclaracao+lerFixture(t); got != want {
 		t.Fatalf("DPS difere da nota real.\n got: %s\nwant: %s", got, want)
 	}
 	if g.ID != "DPS520140523814971600012870000000000000000004" || len(g.ID) != 45 {
@@ -276,7 +276,7 @@ func TestNFSeAssinarDPS_Verificavel(t *testing.T) {
 	if rsa.VerifyPKCS1v15(a1.Cert.PublicKey.(*rsa.PublicKey), crypto.SHA256, ha[:], sig) == nil {
 		t.Fatal("assinatura aceitou SignedInfo adulterado")
 	}
-	if !strings.HasPrefix(xml, "<DPS xmlns=") || !strings.HasSuffix(xml, "</Signature></DPS>") {
+	if !strings.HasPrefix(xml, XMLDeclaracao+"<DPS xmlns=") || !strings.HasSuffix(xml, "</Signature></DPS>") {
 		t.Fatal("estrutura do DPS assinado inesperada")
 	}
 }
@@ -393,6 +393,9 @@ func TestNFSePedidoCancelamento(t *testing.T) {
 	xml, err := AssinarPedidoCancelamento(p, certValido(t))
 	if err != nil {
 		t.Fatal(err)
+	}
+	if !strings.HasPrefix(xml, XMLDeclaracao) {
+		t.Fatal("pedido deve começar com a declaração UTF-8")
 	}
 	if !strings.Contains(xml, "<e101101><xDesc>Cancelamento de NFS-e</xDesc><cMotivo>1</cMotivo>") || !strings.Contains(xml, "<Reference URI=\"#"+p.ID+"\">") {
 		t.Fatalf("pedido mal formado: %s", xml)

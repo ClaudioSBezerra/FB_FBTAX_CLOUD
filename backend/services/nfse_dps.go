@@ -425,8 +425,12 @@ func (g DPSGerado) XMLNaoAssinado() string {
 	return g.montarXML("")
 }
 
+// XMLDeclaracao abre todo XML enviado à Sefin: sem ela a API responde E1229 ("Xml não está
+// utilizando codificação UTF-8"). Não faz parte da forma canônica, então não altera a assinatura.
+const XMLDeclaracao = `<?xml version="1.0" encoding="UTF-8"?>`
+
 func (g DPSGerado) montarXML(assinatura string) string {
-	return "<DPS xmlns=\"" + NFSeNamespace + "\" versao=\"" + g.Versao + "\">" + g.InfDPS + assinatura + "</DPS>"
+	return XMLDeclaracao + "<DPS xmlns=\"" + NFSeNamespace + "\" versao=\"" + g.Versao + "\">" + g.InfDPS + assinatura + "</DPS>"
 }
 
 // EmpacotarDPS comprime (gzip) e codifica em base64 o XML, como exige o POST /nfse.
