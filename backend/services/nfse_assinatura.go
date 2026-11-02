@@ -31,6 +31,9 @@ const (
 	algSHA256     = "http://www.w3.org/2001/04/xmlenc#sha256"
 )
 
+// ErrNFSeSenhaIncorreta indica que a senha informada não abre o .pfx.
+var ErrNFSeSenhaIncorreta = errors.New("senha do certificado incorreta")
+
 // NFSeCertificadoA1 é o par chave/certificado já decodificado do PFX.
 type NFSeCertificadoA1 struct {
 	Chave crypto.Signer
@@ -61,8 +64,11 @@ func CarregarCertificadoA1(pfxCifrado, senhaCifrada string) (*NFSeCertificadoA1,
 // DecodificarPFX lê um PKCS#12. Só chaves RSA são aceitas (exigência do algoritmo rsa-sha256).
 func DecodificarPFX(pfx []byte, senha string) (*NFSeCertificadoA1, error) {
 	chave, cert, _, err := pkcs12.DecodeChain(pfx, senha)
+	if errors.Is(err, pkcs12.ErrIncorrectPassword) {
+		return nil, ErrNFSeSenhaIncorreta
+	}
 	if err != nil {
-		return nil, fmt.Errorf("certificado inválido ou senha incorreta: %w", err)
+		return nil, fmt.Errorf("arquivo de certificado não pôde ser lido: %w", err)
 	}
 	rsaKey, ok := chave.(*rsa.PrivateKey)
 	if !ok {

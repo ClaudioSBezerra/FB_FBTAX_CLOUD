@@ -33,7 +33,7 @@ RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build \
 # ── Stage 3: imagem de produção ───────────────────────────────────────────────
 FROM alpine:latest
 
-RUN apk --no-cache add ca-certificates curl tzdata && \
+RUN apk --no-cache add ca-certificates curl tzdata openssl && \
     ln -sf /usr/share/zoneinfo/America/Sao_Paulo /etc/localtime
 
 RUN addgroup -g 1001 -S appgroup && \

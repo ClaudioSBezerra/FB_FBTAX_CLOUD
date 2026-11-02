@@ -15,6 +15,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -137,9 +138,21 @@ func NFSeCertificadoHandler(db *sql.DB) http.HandlerFunc {
 				return
 			}
 			senha := r.FormValue("senha")
+			// Certificados A1 reais costumam vir em BER, que o Go não lê: reconverte para DER via openssl.
+			pfx, _, err = services.NormalizarPKCS12ParaDER(pfx, senha)
+			if err != nil {
+				log.Printf("[NFSe] normalização do certificado falhou: %v", err)
+				switch {
+				case errors.Is(err, services.ErrNFSeOpensslIndisponivel), errors.Is(err, services.ErrNFSeAmbienteTemporarioIndisponivel):
+					nfseErro(w, http.StatusInternalServerError, "o servidor não consegue converter este certificado (openssl indisponível); avise o suporte")
+				default:
+					nfseErro(w, http.StatusUnprocessableEntity, "não foi possível abrir o certificado: confira o arquivo e a senha")
+				}
+				return
+			}
 			a1, err := services.DecodificarPFX(pfx, senha)
 			if err != nil {
-				nfseErro(w, http.StatusUnprocessableEntity, "certificado inválido ou senha incorreta")
+				nfseErro(w, http.StatusUnprocessableEntity, err.Error())
 				return
 			}
 			if err := services.ValidarCertificadoDoPrestador(a1.Cert, emp.CNPJ, time.Now()); err != nil {

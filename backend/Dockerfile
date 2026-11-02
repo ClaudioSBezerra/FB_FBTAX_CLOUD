@@ -12,7 +12,7 @@ RUN CGO_ENABLED=0 GOOS=linux go build -v -ldflags="-w -s" -o server .
 
 # Run Stage
 FROM alpine:latest
-RUN apk --no-cache add tzdata ca-certificates && \
+RUN apk --no-cache add tzdata ca-certificates openssl && \
     ln -sf /usr/share/zoneinfo/America/Sao_Paulo /etc/localtime
 WORKDIR /root/
 COPY --from=builder /app/server .
