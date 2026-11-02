@@ -3,6 +3,7 @@ export interface ViaCEPResult {
   bairro: string
   localidade: string
   uf: string
+  ibge?: string
 }
 
 export async function buscarCEP(cep: string): Promise<ViaCEPResult | null> {

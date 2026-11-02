@@ -4,6 +4,7 @@ import { Toaster } from '@/components/ui/sonner'
 import Login from './pages/Login'
 import PortalPage from './pages/PortalPage'
 import EmpresaPage from './pages/EmpresaPage'
+import NFSePage from './pages/NFSePage'
 import ClientesPage from './pages/ClientesPage'
 import ProdutosPage from './pages/ProdutosPage'
 import ContratosPage from './pages/ContratosPage'
@@ -78,6 +79,9 @@ function App() {
             } />
             <Route path="/admin/financeiro/empresa" element={
               <FinanceiroRoute><EmpresaPage /></FinanceiroRoute>
+            } />
+            <Route path="/admin/financeiro/nfse" element={
+              <FinanceiroRoute><NFSePage /></FinanceiroRoute>
             } />
             <Route path="/admin/financeiro/clientes" element={
               <FinanceiroRoute><ClientesPage /></FinanceiroRoute>

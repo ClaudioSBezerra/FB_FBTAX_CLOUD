@@ -389,6 +389,14 @@ func main() {
 	http.HandleFunc("/api/financeiro/bancos/sync",        withAuth(handlers.BancosSyncHandler, "admin"))
 	http.HandleFunc("/api/financeiro/bancos/providers",   withAuth(handlers.BancosProvidersHandler, "admin"))
 	http.HandleFunc("/api/financeiro/ofx/upload",         withAuth(handlers.OFXUploadHandler, "admin"))
+	http.HandleFunc("/api/financeiro/nfse/certificado",   withAuth(handlers.NFSeCertificadoHandler, "admin"))
+	http.HandleFunc("/api/financeiro/nfse/prestador",     withAuth(handlers.NFSePrestadorHandler, "admin"))
+	http.HandleFunc("/api/financeiro/nfse/clientes",      withAuth(handlers.NFSeClientesHandler, "admin"))
+	http.HandleFunc("/api/financeiro/nfse/emitir",        withAuth(handlers.NFSeEmitirHandler, "admin"))
+	http.HandleFunc("/api/financeiro/nfse/consultar",     withAuth(handlers.NFSeConsultarHandler, "admin"))
+	http.HandleFunc("/api/financeiro/nfse/cancelar",      withAuth(handlers.NFSeCancelarHandler, "admin"))
+	http.HandleFunc("/api/financeiro/nfse/xml",           withAuth(handlers.NFSeXMLHandler, "admin"))
+	http.HandleFunc("/api/financeiro/nfse",               withAuth(handlers.NFSeListHandler, "admin"))
 
 	// ── Financeiro — portal cliente (JWT role=portal_cliente) ────────────────
 	http.HandleFunc("/api/financeiro/portal/login",     withDB(handlers.PortalLoginHandler))

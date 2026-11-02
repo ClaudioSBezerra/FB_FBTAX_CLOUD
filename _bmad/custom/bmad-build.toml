@@ -1,0 +1,11 @@
+# Overrides de equipe do bmad-build (commitado). Listas acrescentam ao default.
+
+[workflow]
+
+persistent_facts = [
+  "Autorização permanente do usuário (2026-11-02): o passo de revisão (step-04) DEVE rodar os três revisores (blind-hunter, edge-case-hunter, verification-gap) como subagentes síncronos, sem pedir permissão de novo. Os demais passos continuam inline.",
+  "Trabalho direto na branch main, sem branch de feature. Commits sem push: o push só acontece quando o usuário pedir.",
+  "Specs e artefatos ficam em {project-root}/_bmad-output/implementation-artifacts e {project-root}/_bmad-output/planning-artifacts (não em skills/).",
+  "Os arquivos frontend/package.json e frontend/package-lock.json estão modificados por engano de ambiente: ignorar e nunca incluir em commits.",
+  "NFS-e: NUNCA enviar DPS, emitir ou cancelar nota na Sefin (produção ou restrita) sem confirmação explícita do usuário no momento do envio. Certificado A1 real nunca entra no repositório nem em logs.",
+]

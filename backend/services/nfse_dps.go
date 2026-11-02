@@ -13,6 +13,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"regexp"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -22,7 +23,7 @@ const (
 	NFSeNamespace   = "http://www.sped.fazenda.gov.br/nfse"
 	NFSeVersaoDPS   = "1.01"
 	NFSeVerAplic    = "FBTAX-1.0"
-	nfseSeriepadrao = "70000"
+	NFSeSeriePadrao = "70000"
 
 	// Serviço fixo do prestador: assessoria ou consultoria (LC 116, 17.01.01).
 	nfseCTribNac = "170101"
@@ -85,6 +86,9 @@ type DPSGerado struct {
 func xmlTexto(s string) string {
 	var b strings.Builder
 	for _, r := range s {
+		if !xmlCharValido(r) {
+			continue
+		}
 		switch r {
 		case '&':
 			b.WriteString("&amp;")
@@ -99,6 +103,12 @@ func xmlTexto(s string) string {
 		}
 	}
 	return b.String()
+}
+
+// xmlCharValido informa se o rune é legal em XML 1.0 (Char da especificação).
+func xmlCharValido(r rune) bool {
+	return r == '\t' || r == '\n' || r == '\r' ||
+		(r >= 0x20 && r <= 0xD7FF) || (r >= 0xE000 && r <= 0xFFFD && r != 0xFFFE) || (r >= 0x10000 && r <= 0x10FFFF)
 }
 
 // xmlAttr escapa valor de atributo na forma C14N.
@@ -145,6 +155,45 @@ func normalizarTexto(s string) string {
 	return strings.Join(strings.Fields(s), " ")
 }
 
+var rePTotTrib = regexp.MustCompile(`^\d{1,3}\.\d{2}$`)
+
+// CNPJValido confere os dígitos verificadores de um CNPJ numérico de 14 dígitos.
+func CNPJValido(c string) bool {
+	if len(c) != 14 || c == strings.Repeat(string(c[0]), 14) {
+		return false
+	}
+	calc := func(n int) int {
+		pesos := []int{6, 5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2}[13-n:]
+		soma := 0
+		for i := 0; i < n; i++ {
+			soma += int(c[i]-'0') * pesos[i]
+		}
+		if r := soma % 11; r >= 2 {
+			return 11 - r
+		}
+		return 0
+	}
+	return calc(12) == int(c[12]-'0') && calc(13) == int(c[13]-'0')
+}
+
+// CPFValido confere os dígitos verificadores de um CPF de 11 dígitos.
+func CPFValido(c string) bool {
+	if len(c) != 11 || c == strings.Repeat(string(c[0]), 11) {
+		return false
+	}
+	calc := func(n int) int {
+		soma := 0
+		for i := 0; i < n; i++ {
+			soma += int(c[i]-'0') * (n + 1 - i)
+		}
+		if r := (soma * 10) % 11; r < 10 {
+			return r
+		}
+		return 0
+	}
+	return calc(9) == int(c[9]-'0') && calc(10) == int(c[10]-'0')
+}
+
 func soDigitos(s string) string {
 	var b strings.Builder
 	for _, r := range s {
@@ -168,6 +217,9 @@ func tpInscricao(doc string) string {
 
 // IDDPS monta o identificador do DPS: DPS + cLocEmi(7) + tpInsc(1) + CNPJ(14) + série(5) + nDPS(15).
 func IDDPS(codMunEmissor, cnpj, serie string, nDPS int64) string {
+	if len(codMunEmissor) != 7 || len(cnpj) != 14 || len(serie) != 5 || nDPS <= 0 {
+		return ""
+	}
 	return fmt.Sprintf("DPS%s%s%014s%05s%015d", codMunEmissor, tpInscricao(cnpj), cnpj, serie, nDPS)
 }
 
@@ -200,6 +252,45 @@ func (d *DPSDados) validar() error {
 	if normalizarTexto(d.Tomador.Logradouro) == "" || normalizarTexto(d.Tomador.Numero) == "" || normalizarTexto(d.Tomador.Bairro) == "" {
 		erros = append(erros, "endereço do tomador incompleto (logradouro, número e bairro)")
 	}
+	if !CNPJValido(soDigitos(d.Prestador.CNPJ)) {
+		erros = append(erros, "CNPJ do prestador com dígito verificador inválido")
+	}
+	if doc := soDigitos(d.Tomador.CNPJ); (len(doc) == 14 && !CNPJValido(doc)) || (len(doc) == 11 && !CPFValido(doc)) {
+		erros = append(erros, "CNPJ/CPF do tomador com dígito verificador inválido")
+	}
+	if strings.TrimSpace(d.Tomador.CNPJ) != soDigitos(d.Tomador.CNPJ) && strings.ContainsAny(strings.ToUpper(d.Tomador.CNPJ), "ABCDEFGHIJKLMNOPQRSTUVWXYZ") {
+		erros = append(erros, "CNPJ alfanumérico ainda não suportado pelo leiaute DPS 1.01")
+	}
+	for campo, lim := range map[string]struct {
+		valor string
+		max   int
+	}{
+		"nome do tomador":       {normalizarTexto(d.Tomador.Nome), 300},
+		"logradouro do tomador": {normalizarTexto(d.Tomador.Logradouro), 255},
+		"número do tomador":     {normalizarTexto(d.Tomador.Numero), 60},
+		"complemento":           {normalizarTexto(d.Tomador.Complemento), 156},
+		"bairro do tomador":     {normalizarTexto(d.Tomador.Bairro), 60},
+		"e-mail do tomador":     {strings.TrimSpace(d.Tomador.Email), 80},
+		"e-mail do prestador":   {strings.TrimSpace(d.Prestador.Email), 80},
+	} {
+		if utf8.RuneCountInString(lim.valor) > lim.max {
+			erros = append(erros, campo+" excede "+fmt.Sprint(lim.max)+" caracteres")
+		}
+	}
+	for campo, f := range map[string]string{"telefone do prestador": d.Prestador.Fone, "telefone do tomador": d.Tomador.Fone} {
+		if n := len(soDigitos(f)); n != 0 && (n < 6 || n > 20) {
+			erros = append(erros, campo+" deve ter entre 6 e 20 dígitos")
+		}
+	}
+	if d.Prestador.OpSimpNac < 1 || d.Prestador.OpSimpNac > 3 || d.Prestador.RegApTribSN < 1 || d.Prestador.RegApTribSN > 3 || d.Prestador.RegEspTrib < 0 || d.Prestador.RegEspTrib > 9 {
+		erros = append(erros, "regime tributário do prestador fora da faixa")
+	}
+	if d.PTotTribSN != "" && !rePTotTrib.MatchString(d.PTotTribSN) {
+		erros = append(erros, "pTotTribSN deve ter o formato 0.00")
+	}
+	if !d.Emissao.IsZero() && !d.Competencia.IsZero() && d.Competencia.After(d.Emissao) {
+		erros = append(erros, "competência posterior à emissão")
+	}
 	if d.NDPS <= 0 {
 		erros = append(erros, "número do DPS inválido")
 	}
@@ -227,7 +318,7 @@ func GerarDPS(d DPSDados) (DPSGerado, error) {
 	}
 	serie := soDigitos(d.Serie)
 	if serie == "" {
-		serie = nfseSeriepadrao
+		serie = NFSeSeriePadrao
 	}
 	if len(serie) > 5 {
 		return DPSGerado{}, errors.New("DPS inválido: série excede 5 dígitos")
@@ -250,7 +341,7 @@ func GerarDPS(d DPSDados) (DPSGerado, error) {
 		elemTxt("CNPJ", cnpj)+
 			elemOpc("IM", soDigitos(d.Prestador.IM))+
 			elemOpc("fone", soDigitos(d.Prestador.Fone))+
-			elemOpc("email", d.Prestador.Email)+
+			elemOpc("email", strings.TrimSpace(d.Prestador.Email))+
 			elem("regTrib",
 				elemTxt("opSimpNac", fmt.Sprint(d.Prestador.OpSimpNac))+
 					elemTxt("regApTribSN", fmt.Sprint(d.Prestador.RegApTribSN))+
@@ -323,6 +414,9 @@ func GerarDPS(d DPSDados) (DPSGerado, error) {
 // infDPSCanonico é o infDPS como nó apex da canonicalização exclusiva: o namespace padrão
 // é declarado no próprio elemento, antes dos demais atributos.
 func (g DPSGerado) infDPSCanonico() string {
+	if !strings.HasPrefix(g.InfDPS, "<infDPS Id=") {
+		return ""
+	}
 	return strings.Replace(g.InfDPS, "<infDPS Id=", "<infDPS xmlns=\""+NFSeNamespace+"\" Id=", 1)
 }
 

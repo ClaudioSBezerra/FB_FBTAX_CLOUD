@@ -17,6 +17,8 @@ import (
 	"errors"
 	"fmt"
 	"regexp"
+	"strings"
+	"time"
 
 	"software.sslmate.com/src/go-pkcs12"
 )
@@ -38,6 +40,9 @@ type NFSeCertificadoA1 struct {
 // CarregarCertificadoA1 decifra e decodifica o PFX guardado no cofre. Os dois argumentos
 // são os valores cifrados por EncryptConfig (o PFX em base64 antes de cifrar).
 func CarregarCertificadoA1(pfxCifrado, senhaCifrada string) (*NFSeCertificadoA1, error) {
+	if strings.HasPrefix(pfxCifrado, "plain:") || strings.HasPrefix(senhaCifrada, "plain:") {
+		return nil, errors.New("certificado guardado sem criptografia: reenvie o certificado com FINANCEIRO_SECRET configurado")
+	}
 	pfxB64, err := DecryptConfig(pfxCifrado)
 	if err != nil {
 		return nil, fmt.Errorf("decifrar pfx: %w", err)
@@ -66,29 +71,33 @@ func DecodificarPFX(pfx []byte, senha string) (*NFSeCertificadoA1, error) {
 	return &NFSeCertificadoA1{Chave: rsaKey, Cert: cert}, nil
 }
 
-var reCNPJ14 = regexp.MustCompile(`\d{14}`)
+var reCNPJCN = regexp.MustCompile(`:(\d{14})\s*$`)
 
-// CNPJDoCertificado extrai o CNPJ do CN do certificado ICP-Brasil ("RAZAO:00000000000000").
+// CNPJDoCertificado extrai o CNPJ do CN do certificado e-CNPJ ICP-Brasil ("RAZAO SOCIAL:00000000000000").
+// Vazio quando o CN não segue o padrão.
 func CNPJDoCertificado(cert *x509.Certificate) string {
-	return reCNPJ14.FindString(cert.Subject.CommonName)
+	if m := reCNPJCN.FindStringSubmatch(cert.Subject.CommonName); m != nil {
+		return m[1]
+	}
+	return ""
 }
 
-// AssinarDPS devolve o XML completo do DPS com o <Signature> sobre o infDPS.
-func AssinarDPS(g DPSGerado, a1 *NFSeCertificadoA1) (string, error) {
+// assinarXMLDSig assina o elemento apex (já canônico, com o namespace declarado) referenciado
+// por #id e devolve o bloco <Signature>. Serve ao DPS e ao pedido de registro de evento.
+func assinarXMLDSig(id, apexCanonico string, a1 *NFSeCertificadoA1) (string, error) {
 	if a1 == nil || a1.Chave == nil || a1.Cert == nil {
 		return "", errors.New("certificado A1 não informado")
 	}
-	if g.ID == "" || g.InfDPS == "" {
-		return "", errors.New("DPS vazio")
+	if id == "" || apexCanonico == "" {
+		return "", errors.New("elemento a assinar vazio")
 	}
-
-	resumo := sha256.Sum256([]byte(g.infDPSCanonico()))
+	resumo := sha256.Sum256([]byte(apexCanonico))
 	digest := base64.StdEncoding.EncodeToString(resumo[:])
 
 	// Corpo do SignedInfo: elementos expandidos, sem espaços (já canônico).
 	corpoSI := "<CanonicalizationMethod Algorithm=\"" + algC14NExc + "\"></CanonicalizationMethod>" +
 		"<SignatureMethod Algorithm=\"" + algRSASHA256 + "\"></SignatureMethod>" +
-		"<Reference URI=\"#" + xmlAttr(g.ID) + "\">" +
+		"<Reference URI=\"#" + xmlAttr(id) + "\">" +
 		"<Transforms>" +
 		"<Transform Algorithm=\"" + algEnveloped + "\"></Transform>" +
 		"<Transform Algorithm=\"" + algC14NExc + "\"></Transform>" +
@@ -103,31 +112,61 @@ func AssinarDPS(g DPSGerado, a1 *NFSeCertificadoA1) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("assinar: %w", err)
 	}
-
-	assinatura := "<Signature xmlns=\"" + dsigNamespace + "\">" +
+	return "<Signature xmlns=\"" + dsigNamespace + "\">" +
 		"<SignedInfo>" + corpoSI + "</SignedInfo>" +
 		"<SignatureValue>" + base64.StdEncoding.EncodeToString(sig) + "</SignatureValue>" +
 		"<KeyInfo><X509Data><X509Certificate>" + base64.StdEncoding.EncodeToString(a1.Cert.Raw) +
-		"</X509Certificate></X509Data></KeyInfo></Signature>"
+		"</X509Certificate></X509Data></KeyInfo></Signature>", nil
+}
 
-	return g.montarXML(assinatura), nil
+// AssinarDPS devolve o XML completo do DPS com o <Signature> sobre o infDPS. Recusa assinar
+// se o certificado estiver fora da validade ou não pertencer ao prestador do DPS (o CNPJ do
+// emitente está no Id): assim o número de DPS não é gasto com uma nota fadada à rejeição.
+func AssinarDPS(g DPSGerado, a1 *NFSeCertificadoA1) (string, error) {
+	canon := g.infDPSCanonico()
+	if a1 == nil || a1.Cert == nil || g.ID == "" || canon == "" {
+		return "", errors.New("DPS ou certificado vazio")
+	}
+	if err := ValidarCertificadoDoPrestador(a1.Cert, g.ID[11:25], time.Now()); err != nil {
+		return "", err
+	}
+	sig, err := assinarXMLDSig(g.ID, canon, a1)
+	if err != nil {
+		return "", err
+	}
+	return g.montarXML(sig), nil
+}
+
+// ValidarCertificadoDoPrestador confere validade e titularidade (CNPJ) do certificado.
+func ValidarCertificadoDoPrestador(cert *x509.Certificate, cnpjPrestador string, agora time.Time) error {
+	if agora.Before(cert.NotBefore) || agora.After(cert.NotAfter) {
+		return fmt.Errorf("certificado fora da validade (%s a %s)", cert.NotBefore.Format("02/01/2006"), cert.NotAfter.Format("02/01/2006"))
+	}
+	if got := CNPJDoCertificado(cert); got != cnpjPrestador {
+		return fmt.Errorf("o certificado pertence ao CNPJ %q, não ao prestador %s", got, cnpjPrestador)
+	}
+	return nil
 }
 
 // CifrarCertificadoA1 prepara o PFX e a senha para o cofre. Diferente de EncryptConfig, recusa
 // gravar quando FINANCEIRO_SECRET não está configurado: um certificado A1 nunca pode ir para
 // o banco só em base64.
-func CifrarCertificadoA1(pfx []byte, senha string) (pfxCifrado, senhaCifrada string, err error) {
+func CifrarCertificadoA1(pfx []byte, senha string) (pfxCifrado, senhaCifrada string, validade time.Time, err error) {
 	if masterKey() == nil {
-		return "", "", errors.New("FINANCEIRO_SECRET não configurado: o certificado não pode ser guardado sem criptografia")
+		return "", "", time.Time{}, errors.New("FINANCEIRO_SECRET não configurado: o certificado não pode ser guardado sem criptografia")
 	}
-	if _, err := DecodificarPFX(pfx, senha); err != nil {
-		return "", "", err
+	a1, err := DecodificarPFX(pfx, senha)
+	if err != nil {
+		return "", "", time.Time{}, err
+	}
+	if time.Now().After(a1.Cert.NotAfter) {
+		return "", "", time.Time{}, fmt.Errorf("certificado vencido em %s", a1.Cert.NotAfter.Format("02/01/2006"))
 	}
 	if pfxCifrado, err = EncryptConfig(base64.StdEncoding.EncodeToString(pfx)); err != nil {
-		return "", "", err
+		return "", "", time.Time{}, err
 	}
 	if senhaCifrada, err = EncryptConfig(senha); err != nil {
-		return "", "", err
+		return "", "", time.Time{}, err
 	}
-	return pfxCifrado, senhaCifrada, nil
+	return pfxCifrado, senhaCifrada, a1.Cert.NotAfter, nil
 }

@@ -5,3 +5,8 @@
 #
 # [agents.bmad-agent-pm]
 # description = "Prefers short, bulleted PRDs over narrative drafts."
+
+# Pastas de artefatos do projeto (as specs existentes já vivem em _bmad-output).
+[modules.bmm]
+planning_artifacts = "{project-root}/_bmad-output/planning-artifacts"
+implementation_artifacts = "{project-root}/_bmad-output/implementation-artifacts"

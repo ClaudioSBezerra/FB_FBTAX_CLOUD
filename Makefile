@@ -11,6 +11,7 @@ help:
 	@echo "  make frontend    Sobe só o frontend (:3086)"
 	@echo
 	@echo "  make test        Testes do backend + typecheck do frontend"
+	@echo "  make test-nfse-db Testes de NFS-e que usam Postgres (banco descartável)"
 	@echo "  make build       Compila os dois como em produção"
 	@echo
 	@echo "  make psql        Console do banco"
@@ -30,6 +31,9 @@ backend:
 
 frontend:
 	@cd frontend && npm run dev
+
+test-nfse-db:
+	@./dev/test-nfse-db.sh
 
 test:
 	@echo "▸ Backend"; cd backend && go vet ./... && go test ./...
