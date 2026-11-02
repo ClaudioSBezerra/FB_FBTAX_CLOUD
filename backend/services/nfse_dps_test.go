@@ -376,6 +376,11 @@ func TestNFSeParseRespostaSefin(t *testing.T) {
 	if r.Autorizada() || len(r.Erros) != 1 || !strings.Contains(r.MensagemErro(), "E0001") {
 		t.Fatalf("rejeição mal interpretada: %+v", r)
 	}
+	// Consulta e eventos devolvem um único objeto "erro" (ResponseErro), não a lista "erros".
+	r = ParseRespostaSefin(400, []byte(`{"tipoAmbiente":1,"erro":{"codigo":"E0100","descricao":"não permitido","complemento":"x"}}`))
+	if r.Autorizada() || len(r.Erros) != 1 || r.Erros[0].Codigo != "E0100" || r.TipoAmbiente != 1 {
+		t.Fatalf("objeto erro mal interpretado: %+v", r)
+	}
 	if r = ParseRespostaSefin(500, []byte("<html>")); r.Autorizada() || !strings.Contains(r.MensagemErro(), "HTTP 500") {
 		t.Fatal("erro HTTP sem JSON deve ser relatado")
 	}

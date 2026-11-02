@@ -107,12 +107,13 @@ type SefinErro struct {
 
 // RespostaSefin é o resultado normalizado de uma chamada.
 type RespostaSefin struct {
-	Status      int
-	Corpo       string // corpo bruto (limitado)
-	ChaveAcesso string
-	NFSeXML     string // XML da NFS-e já descompactado, quando vier
-	IDDPS       string
-	Erros       []SefinErro
+	Status       int
+	Corpo        string // corpo bruto (limitado)
+	ChaveAcesso  string
+	NFSeXML      string // XML da NFS-e já descompactado, quando vier
+	IDDPS        string
+	TipoAmbiente int // 1 produção, 2 homologação, 0 se a resposta não informou
+	Erros        []SefinErro
 }
 
 // Autorizada indica HTTP 2xx sem erros.
@@ -220,7 +221,15 @@ func ParseRespostaSefin(status int, raw []byte) *RespostaSefin {
 			r.NFSeXML = x
 		}
 	}
-	for _, chave := range []string{"erros", "erro", "mensagens"} {
+	if f, ok := get("tipoAmbiente").(float64); ok {
+		r.TipoAmbiente = int(f)
+	}
+	// ResponseErro (consulta, eventos) traz um único objeto "erro"; NFSePostResponseErro (emissão)
+	// traz a lista "erros".
+	if e, ok := get("erro").(map[string]any); ok {
+		r.Erros = append(r.Erros, SefinErro{Codigo: strVal(e, "codigo"), Descricao: strings.TrimSpace(strVal(e, "descricao") + " " + strVal(e, "complemento"))})
+	}
+	for _, chave := range []string{"erros", "mensagens"} {
 		lista, ok := get(chave).([]any)
 		if !ok {
 			continue

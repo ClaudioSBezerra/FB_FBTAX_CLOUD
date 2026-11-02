@@ -486,8 +486,12 @@ func NFSeEmitirHandler(db *sql.DB) http.HandlerFunc {
 			nfseErro(w, http.StatusBadGateway, "a Sefin respondeu sem chave de acesso; use Consultar para conferir")
 			return
 		}
+		if resp.TipoAmbiente != 0 && resp.TipoAmbiente != emp.Ambiente {
+			log.Printf("[NFSe] ATENÇÃO: enviado ao ambiente %d mas a Sefin respondeu tipoAmbiente=%d (chave %s)", emp.Ambiente, resp.TipoAmbiente, resp.ChaveAcesso)
+		}
 		marcarNFSe(ctx, db, id, "autorizada", resp.ChaveAcesso, resp.NFSeXML, "", "")
-		nfseJSON(w, http.StatusCreated, map[string]any{"id": id, "status": "autorizada", "chave_acesso": resp.ChaveAcesso, "n_nfse": numeroNFSe(resp.NFSeXML)})
+		nfseJSON(w, http.StatusCreated, map[string]any{"id": id, "status": "autorizada", "chave_acesso": resp.ChaveAcesso,
+			"n_nfse": numeroNFSe(resp.NFSeXML), "tipo_ambiente": resp.TipoAmbiente})
 	}
 }
 
