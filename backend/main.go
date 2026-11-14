@@ -396,6 +396,7 @@ func main() {
 	http.HandleFunc("/api/financeiro/bancos/providers",   withAuth(handlers.BancosProvidersHandler, "admin"))
 	http.HandleFunc("/api/financeiro/ofx/upload",         withAuth(handlers.OFXUploadHandler, "admin"))
 	http.HandleFunc("/api/financeiro/titulos",            withAuth(handlers.TitulosHandler, "admin"))
+	http.HandleFunc("/api/financeiro/cnpj",               withAuth(func(*sql.DB) http.HandlerFunc { return handlers.CNPJConsultaHandler() }, "admin"))
 	http.HandleFunc("/api/financeiro/despesas",           withAuth(handlers.DespesasHandler, "admin"))
 	http.HandleFunc("/api/financeiro/despesas/comprovantes", withAuth(handlers.DespesasComprovantesHandler, "admin"))
 	http.HandleFunc("/api/financeiro/notas-debito",       withAuth(handlers.NotasDebitoHandler, "admin"))

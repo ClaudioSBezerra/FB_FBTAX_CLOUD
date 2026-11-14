@@ -62,6 +62,8 @@ export default function ReembolsosPage() {
     cont_desc: lembrado('reemb.cont_desc'), cont_num: lembrado('reemb.cont_num'),
   })
   const [ocupado, setOcupado] = useState(false)
+  const [cnpjDestino, setCnpjDestino] = useState(lembrado('reemb.cnpj_destino'))
+  const [consultando, setConsultando] = useState(false)
 
   const carregar = useCallback(async () => {
     if (clienteId) {
@@ -206,6 +208,21 @@ export default function ReembolsosPage() {
     carregar()
   }
 
+  const buscarCNPJ = async () => {
+    const digitos = cnpjDestino.replace(/\D/g, '')
+    if (digitos.length !== 14) return toast.error('Informe o CNPJ do destino com 14 dígitos')
+    setConsultando(true)
+    try {
+      const res = await fetch(`/api/financeiro/cnpj?cnpj=${digitos}`)
+      if (!res.ok) return toast.error(await erroDe(res))
+      const j = await res.json()
+      setNota(n => ({ ...n, destino: j.destino }))
+      lembrar('reemb.cnpj_destino', cnpjDestino)
+      if (j.situacao && j.situacao !== 'ATIVA') toast.warning(`Situação cadastral do CNPJ: ${j.situacao}`)
+      else toast.success(`Destino preenchido: ${j.razao_social}`)
+    } finally { setConsultando(false) }
+  }
+
   const campoNota = (k: keyof typeof nota, rotulo: string, ph = '') => (
     <div><Label>{rotulo}</Label><Input value={nota[k]} placeholder={ph} onChange={e => setNota({ ...nota, [k]: e.target.value })} /></div>
   )
@@ -323,8 +340,18 @@ export default function ReembolsosPage() {
         <CardHeader><CardTitle className="text-base">3. Gerar a nota de débito (FOR.FIN.0002)</CardTitle></CardHeader>
         <CardContent className="space-y-3">
           <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-            {campoNota('destino', 'Destino', 'Av. Mascarenhas de Moraes, 2967 — Recife - PE')}
+            <div>
+              <Label>CNPJ do destino</Label>
+              <div className="flex gap-2">
+                <Input value={cnpjDestino} placeholder="00.000.000/0000-00" onChange={e => setCnpjDestino(e.target.value)}
+                  onBlur={() => { if (cnpjDestino.replace(/\D/g, '').length === 14 && !nota.destino) buscarCNPJ() }} />
+                <Button type="button" variant="outline" disabled={consultando} onClick={buscarCNPJ}>{consultando ? 'Buscando…' : 'Buscar'}</Button>
+              </div>
+            </div>
+            <div className="md:col-span-2"><Label>Destino (preenchido pelo CNPJ; pode ajustar)</Label>
+              <Input value={nota.destino} onChange={e => setNota({ ...nota, destino: e.target.value })} /></div>
             {campoNota('solicitante', 'Solicitante')}
+            <div />
             <div />
             {campoNota('cc_desc', 'Centro de custo (descrição)')}
             {campoNota('cc_num', 'Nº do centro de custo')}
