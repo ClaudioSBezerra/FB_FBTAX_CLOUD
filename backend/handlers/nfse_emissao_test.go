@@ -3,12 +3,15 @@ package handlers
 import (
 	"bytes"
 	"context"
+	"crypto/ecdsa"
+	"crypto/elliptic"
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"database/sql"
 	"encoding/json"
+	"encoding/pem"
 	"math/big"
 	"mime/multipart"
 	"net/http"
@@ -258,5 +261,65 @@ func TestNFSeDANFSeHandler_GeraLocalDoXML(t *testing.T) {
 	db.Exec(`UPDATE financeiro.nfse_emitidas SET status = 'rejeitada' WHERE id = $1`, id)
 	if rr := chamar(NFSeDANFSeHandler(db), http.MethodGet, "/?id="+id, nil, ""); rr.Code != http.StatusConflict {
 		t.Fatalf("nota rejeitada não tem DANFSe: %d", rr.Code)
+	}
+}
+
+func TestBancosConfig_SegredosNuncaVoltamEBrancoPreserva(t *testing.T) {
+	t.Setenv("FINANCEIRO_SECRET", "segredo-de-teste")
+	db := nfseTestDB(t)
+	var contaID string
+	if err := db.QueryRow(`INSERT INTO financeiro.contas_financeiras (apelido, banco, provedor) VALUES ('Inter teste', '077 - INTER', 'inter') RETURNING id`).Scan(&contaID); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { db.Exec(`DELETE FROM financeiro.contas_financeiras WHERE id = $1`, contaID) })
+
+	// Certificado e chave de teste (par válido).
+	key, _ := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	tpl := &x509.Certificate{SerialNumber: big.NewInt(3), Subject: pkix.Name{CommonName: "t"}, NotBefore: time.Now().Add(-time.Hour), NotAfter: time.Now().Add(200 * 24 * time.Hour)}
+	der, _ := x509.CreateCertificate(rand.Reader, tpl, tpl, &key.PublicKey, key)
+	kb, _ := x509.MarshalECPrivateKey(key)
+	certPEM := string(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der}))
+	keyPEM := string(pem.EncodeToMemory(&pem.Block{Type: "EC PRIVATE KEY", Bytes: kb}))
+
+	h := BancosConfigHandler(db)
+	put := func(cfg map[string]string) *httptest.ResponseRecorder {
+		b, _ := json.Marshal(map[string]any{"conta_id": contaID, "provedor": "inter", "config": cfg})
+		return chamar(h, http.MethodPut, "/", b, "application/json")
+	}
+	if rr := put(map[string]string{"client_id": "abc-1234", "client_secret": "SEGREDO-SUPER", "cert_pem": certPEM, "key_pem": keyPEM, "conta_corrente": "999"}); rr.Code != 200 {
+		t.Fatalf("salvar: %d %s", rr.Code, rr.Body)
+	}
+	// Segunda gravação só com a conta corrente: o resto precisa ser preservado.
+	if rr := put(map[string]string{"conta_corrente": "888"}); rr.Code != 200 {
+		t.Fatalf("salvar parcial: %d %s", rr.Code, rr.Body)
+	}
+	rr := chamar(h, http.MethodGet, "/?conta_id="+contaID, nil, "")
+	corpo := rr.Body.String()
+	for _, proibido := range []string{"SEGREDO-SUPER", "BEGIN", "abc-1234"} {
+		if strings.Contains(corpo, proibido) {
+			t.Fatalf("a resposta não pode conter %q: %s", proibido, corpo)
+		}
+	}
+	for _, esperado := range []string{`"tem_secret":true`, `"tem_certificado":true`, `"tem_chave":true`, `"client_id_final":"1234"`, `"conta_corrente":"888"`} {
+		if !strings.Contains(corpo, esperado) {
+			t.Fatalf("faltou %s em %s", esperado, corpo)
+		}
+	}
+	var guardado string
+	db.QueryRow(`SELECT provedor_config FROM financeiro.contas_financeiras WHERE id=$1`, contaID).Scan(&guardado)
+	if strings.Contains(guardado, "SEGREDO") || strings.HasPrefix(guardado, "plain:") {
+		t.Fatal("config deve estar cifrada no banco")
+	}
+	// Par inválido (chave de outro certificado) é recusado.
+	key2, _ := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	kb2, _ := x509.MarshalECPrivateKey(key2)
+	outraChave := string(pem.EncodeToMemory(&pem.Block{Type: "EC PRIVATE KEY", Bytes: kb2}))
+	if rr := put(map[string]string{"key_pem": outraChave}); rr.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("par inválido deveria dar 422, veio %d", rr.Code)
+	}
+	// Sem FINANCEIRO_SECRET não grava.
+	t.Setenv("FINANCEIRO_SECRET", "")
+	if rr := put(map[string]string{"client_id": "x"}); rr.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("sem chave de criptografia deveria dar 422, veio %d", rr.Code)
 	}
 }

@@ -2,16 +2,20 @@ package services
 
 import (
 	"crypto/tls"
+	"crypto/x509"
+	"encoding/base64"
 	"fmt"
 	"net/http"
 	"strings"
 	"time"
-	"encoding/base64"
 )
 
 // buildMTLSClient cria um http.Client com mTLS se certPEM/keyPEM fornecidos,
 // ou um client HTTPS simples caso contrário.
 // Aceita PEM bruto, PEM com \n literal (para env vars de linha única), ou base64.
+// mtlsRootCAsTeste substitui as raízes confiáveis nos testes do pacote (servidor TLS de teste).
+var mtlsRootCAsTeste *x509.CertPool
+
 func buildMTLSClient(certPEM, keyPEM string) (*http.Client, error) {
 	if certPEM == "" || keyPEM == "" {
 		return &http.Client{Timeout: 30 * time.Second}, nil
@@ -21,7 +25,7 @@ func buildMTLSClient(certPEM, keyPEM string) (*http.Client, error) {
 		return nil, fmt.Errorf("certificado mTLS inválido: %w", err)
 	}
 	transport := &http.Transport{
-		TLSClientConfig: &tls.Config{Certificates: []tls.Certificate{cert}},
+		TLSClientConfig: &tls.Config{Certificates: []tls.Certificate{cert}, RootCAs: mtlsRootCAsTeste},
 	}
 	return &http.Client{Transport: transport, Timeout: 30 * time.Second}, nil
 }

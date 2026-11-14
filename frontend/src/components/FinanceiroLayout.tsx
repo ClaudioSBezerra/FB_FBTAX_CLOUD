@@ -9,6 +9,7 @@ const navItems = [
   { label: 'Produtos', path: '/admin/financeiro/produtos' },
   { label: 'Contratos', path: '/admin/financeiro/contratos' },
   { label: 'NFS-e', path: '/admin/financeiro/nfse' },
+  { label: 'Bancos', path: '/admin/financeiro/bancos' },
   { label: 'Termos de Entrega', path: '/admin/financeiro/entregas' },
   { label: 'Tokens', path: '/admin/financeiro/tokens' },
   { label: 'API Keys', path: '/admin/financeiro/api-keys' },

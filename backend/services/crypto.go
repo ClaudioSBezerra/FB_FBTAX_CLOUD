@@ -90,3 +90,7 @@ func DecryptConfig(encoded string) (string, error) {
 	}
 	return string(plain), nil
 }
+
+// ChaveCriptografiaConfigurada informa se FINANCEIRO_SECRET está definida. Sem ela EncryptConfig
+// grava em base64 simples; segredos de banco (client secret, chave privada) devem recusar isso.
+func ChaveCriptografiaConfigurada() bool { return masterKey() != nil }

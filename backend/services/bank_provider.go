@@ -11,6 +11,7 @@ type ProviderConfig struct {
 	Agencia       string `json:"agencia,omitempty"`        // Itaú: agência
 	Conta         string `json:"conta,omitempty"`          // Itaú: número da conta
 	BaseURL       string `json:"base_url,omitempty"`       // override do endpoint
+	Scopes        string `json:"scopes,omitempty"`         // Inter: escopos de leitura do extrato (padrão extrato.read)
 }
 
 // BankSaldo representa o saldo de uma conta bancária.
@@ -21,8 +22,8 @@ type BankSaldo struct {
 
 // BankTransacao é a representação normalizada de um lançamento bancário.
 type BankTransacao struct {
-	IDExterno     string  // identificador único no banco (para deduplicação)
-	DataTransacao string  // YYYY-MM-DD
+	IDExterno     string // identificador único no banco (para deduplicação)
+	DataTransacao string // YYYY-MM-DD
 	Descricao     string
 	Valor         float64 // sempre positivo
 	Tipo          string  // "credito" | "debito"

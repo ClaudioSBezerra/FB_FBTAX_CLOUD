@@ -1,9 +1,13 @@
 package handlers
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
+	"io"
+	"log"
 	"net/http"
+	"strings"
 	"time"
 
 	"fb_cloud/services"
@@ -20,22 +24,22 @@ func BancosStatusHandler(db *sql.DB) http.HandlerFunc {
 		w.Header().Set("Content-Type", "application/json")
 
 		type SyncLog struct {
-			Status       string     `json:"status"`
-			IniciadoEm   time.Time  `json:"iniciado_em"`
-			TxImportadas int        `json:"tx_importadas"`
-			TxDuplicadas int        `json:"tx_duplicadas"`
-			SaldoFinal   *float64   `json:"saldo_final,omitempty"`
-			ErrDetalhe   *string    `json:"erro_detalhe,omitempty"`
+			Status       string    `json:"status"`
+			IniciadoEm   time.Time `json:"iniciado_em"`
+			TxImportadas int       `json:"tx_importadas"`
+			TxDuplicadas int       `json:"tx_duplicadas"`
+			SaldoFinal   *float64  `json:"saldo_final,omitempty"`
+			ErrDetalhe   *string   `json:"erro_detalhe,omitempty"`
 		}
 		type ContaStatus struct {
-			ID             string    `json:"id"`
-			Apelido        string    `json:"apelido"`
-			Banco          string    `json:"banco"`
-			Provedor       string    `json:"provedor"`
-			Saldo          float64   `json:"saldo"`
-			UltimaSync     *string   `json:"ultima_sync,omitempty"`
-			Configurado    bool      `json:"configurado"`
-			UltimoSync     *SyncLog  `json:"ultimo_sync,omitempty"`
+			ID          string   `json:"id"`
+			Apelido     string   `json:"apelido"`
+			Banco       string   `json:"banco"`
+			Provedor    string   `json:"provedor"`
+			Saldo       float64  `json:"saldo"`
+			UltimaSync  *string  `json:"ultima_sync,omitempty"`
+			Configurado bool     `json:"configurado"`
+			UltimoSync  *SyncLog `json:"ultimo_sync,omitempty"`
 		}
 
 		rows, err := db.Query(`
@@ -70,8 +74,12 @@ func BancosStatusHandler(db *sql.DB) http.HandlerFunc {
 			var sf sql.NullFloat64
 			var ed sql.NullString
 			if err := logRow.Scan(&sl.Status, &sl.IniciadoEm, &sl.TxImportadas, &sl.TxDuplicadas, &sf, &ed); err == nil {
-				if sf.Valid { sl.SaldoFinal = &sf.Float64 }
-				if ed.Valid { sl.ErrDetalhe = &ed.String }
+				if sf.Valid {
+					sl.SaldoFinal = &sf.Float64
+				}
+				if ed.Valid {
+					sl.ErrDetalhe = &ed.String
+				}
 				c.UltimoSync = &sl
 			}
 			contas = append(contas, c)
@@ -83,23 +91,84 @@ func BancosStatusHandler(db *sql.DB) http.HandlerFunc {
 	}
 }
 
-// PUT /api/financeiro/bancos/config
-// Salva credenciais do provedor para uma conta (criptografadas).
-// Body: { conta_id, provedor, config: { client_id, client_secret, cert_pem, key_pem, ... } }
+// configBancoMeta é o que se mostra da configuração salva: nunca o segredo nem a chave privada.
+type configBancoMeta struct {
+	Configurado    bool   `json:"configurado"`
+	Provedor       string `json:"provedor,omitempty"`
+	ClientIDFinal  string `json:"client_id_final,omitempty"` // só os 4 últimos caracteres
+	TemSecret      bool   `json:"tem_secret"`
+	TemCertificado bool   `json:"tem_certificado"`
+	TemChave       bool   `json:"tem_chave"`
+	ContaCorrente  string `json:"conta_corrente,omitempty"`
+	Scopes         string `json:"scopes,omitempty"`
+	CertValidade   string `json:"cert_validade,omitempty"`
+	CertDiasRestam int    `json:"cert_dias_restantes,omitempty"`
+}
+
+func carregarConfigBanco(db *sql.DB, contaID string) (provedor string, cfg services.ProviderConfig, existe bool, err error) {
+	var enc sql.NullString
+	var prov sql.NullString
+	err = db.QueryRow(`SELECT provedor, provedor_config FROM financeiro.contas_financeiras WHERE id = $1 AND ativa = true`, contaID).Scan(&prov, &enc)
+	if err != nil {
+		return "", cfg, false, err
+	}
+	provedor = prov.String
+	if !enc.Valid || enc.String == "" {
+		return provedor, cfg, false, nil
+	}
+	js, derr := services.DecryptConfig(enc.String)
+	if derr != nil {
+		return provedor, cfg, false, derr
+	}
+	if jerr := json.Unmarshal([]byte(js), &cfg); jerr != nil {
+		return provedor, cfg, false, jerr
+	}
+	return provedor, cfg, true, nil
+}
+
+// BancosConfigHandler:
+//
+//	GET  ?conta_id=  → metadados da configuração (sem segredos)
+//	PUT/POST         → salva; campos em branco PRESERVAM o valor já guardado
+//	                   Body: { conta_id, provedor, config: { client_id, client_secret, cert_pem, key_pem, conta_corrente, scopes } }
 func BancosConfigHandler(db *sql.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+
+		if r.Method == http.MethodGet {
+			contaID := r.URL.Query().Get("conta_id")
+			prov, cfg, existe, err := carregarConfigBanco(db, contaID)
+			if err != nil {
+				http.Error(w, "conta não encontrada ou configuração ilegível", http.StatusNotFound)
+				return
+			}
+			m := configBancoMeta{Configurado: existe, Provedor: prov}
+			if existe {
+				m.ClientIDFinal = ultimos(cfg.ClientID, 4)
+				m.TemSecret = cfg.ClientSecret != ""
+				m.TemCertificado, m.TemChave = cfg.CertPEM != "", cfg.KeyPEM != ""
+				m.ContaCorrente, m.Scopes = cfg.ContaCorrente, cfg.Scopes
+				if cfg.CertPEM != "" && cfg.KeyPEM != "" {
+					if c, err := services.ValidarParCertificadoInter(cfg.CertPEM, cfg.KeyPEM); err == nil {
+						m.CertValidade = c.NotAfter.Format("2006-01-02")
+						m.CertDiasRestam = int(time.Until(c.NotAfter).Hours() / 24)
+					}
+				}
+			}
+			json.NewEncoder(w).Encode(m)
+			return
+		}
 		if r.Method != http.MethodPut && r.Method != http.MethodPost {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
-		w.Header().Set("Content-Type", "application/json")
 
 		var req struct {
 			ContaID  string                  `json:"conta_id"`
 			Provedor string                  `json:"provedor"`
 			Config   services.ProviderConfig `json:"config"`
 		}
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 256<<10)).Decode(&req); err != nil {
 			http.Error(w, "invalid request", http.StatusBadRequest)
 			return
 		}
@@ -111,27 +180,105 @@ func BancosConfigHandler(db *sql.DB) http.HandlerFunc {
 			http.Error(w, "provedor não suportado: "+req.Provedor, http.StatusBadRequest)
 			return
 		}
+		if !services.ChaveCriptografiaConfigurada() {
+			http.Error(w, "FINANCEIRO_SECRET não configurado: credenciais bancárias não podem ser guardadas sem criptografia", http.StatusUnprocessableEntity)
+			return
+		}
 
-		configJSON, err := json.Marshal(req.Config)
+		// Preserva o que já existe quando o campo vem em branco (o front nunca recebe os segredos de volta).
+		_, atual, _, _ := carregarConfigBanco(db, req.ContaID)
+		novo := req.Config
+		manter := func(n *string, antigo string) {
+			if strings.TrimSpace(*n) == "" {
+				*n = antigo
+			}
+		}
+		manter(&novo.ClientID, atual.ClientID)
+		manter(&novo.ClientSecret, atual.ClientSecret)
+		manter(&novo.CertPEM, atual.CertPEM)
+		manter(&novo.KeyPEM, atual.KeyPEM)
+		manter(&novo.ContaCorrente, atual.ContaCorrente)
+		manter(&novo.Scopes, atual.Scopes)
+		manter(&novo.Agencia, atual.Agencia)
+		manter(&novo.Conta, atual.Conta)
+		manter(&novo.BaseURL, atual.BaseURL)
+
+		if req.Provedor == "inter" && novo.CertPEM != "" && novo.KeyPEM != "" {
+			cert, err := services.ValidarParCertificadoInter(novo.CertPEM, novo.KeyPEM)
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusUnprocessableEntity)
+				return
+			}
+			if time.Now().After(cert.NotAfter) {
+				http.Error(w, "o certificado do Inter está vencido ("+cert.NotAfter.Format("02/01/2006")+")", http.StatusUnprocessableEntity)
+				return
+			}
+		}
+
+		configJSON, err := json.Marshal(novo)
 		if err != nil {
 			http.Error(w, "erro serializando config", http.StatusInternalServerError)
 			return
 		}
 		encrypted, err := services.EncryptConfig(string(configJSON))
 		if err != nil {
-			http.Error(w, "erro criptografando config: "+err.Error(), http.StatusInternalServerError)
+			http.Error(w, "erro criptografando config", http.StatusInternalServerError)
 			return
 		}
-
-		_, err = db.Exec(`
-			UPDATE financeiro.contas_financeiras
-			SET provedor = $1, provedor_config = $2
-			WHERE id = $3`, req.Provedor, encrypted, req.ContaID)
-		if err != nil {
+		if _, err = db.Exec(`UPDATE financeiro.contas_financeiras SET provedor = $1, provedor_config = $2 WHERE id = $3`, req.Provedor, encrypted, req.ContaID); err != nil {
 			http.Error(w, "db error", http.StatusInternalServerError)
 			return
 		}
+		log.Printf("[Bancos] credenciais do provedor %s atualizadas (conta %s)", req.Provedor, req.ContaID)
 		json.NewEncoder(w).Encode(map[string]string{"mensagem": "Configuração salva com sucesso"})
+	}
+}
+
+func ultimos(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	return s[len(s)-n:]
+}
+
+// BancosTestarHandler roda o diagnóstico da integração — POST /api/financeiro/bancos/testar {conta_id}.
+// Verifica certificado, descobre os escopos reais da integração e testa o saldo. Somente leitura.
+func BancosTestarHandler(db *sql.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if r.Method != http.MethodPost {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		var req struct {
+			ContaID string `json:"conta_id"`
+		}
+		if json.NewDecoder(io.LimitReader(r.Body, 4<<10)).Decode(&req) != nil || req.ContaID == "" {
+			http.Error(w, "conta_id obrigatório", http.StatusBadRequest)
+			return
+		}
+		prov, cfg, existe, err := carregarConfigBanco(db, req.ContaID)
+		if err != nil || !existe {
+			w.WriteHeader(http.StatusUnprocessableEntity)
+			json.NewEncoder(w).Encode(map[string]string{"erro": "Conta sem credenciais configuradas."})
+			return
+		}
+		if prov != "inter" {
+			w.WriteHeader(http.StatusUnprocessableEntity)
+			json.NewEncoder(w).Encode(map[string]string{"erro": "o teste detalhado só existe para o Inter"})
+			return
+		}
+		ctx, cancel := context.WithTimeout(r.Context(), 100*time.Second)
+		defer cancel()
+		done := make(chan *services.InterDiagnostico, 1)
+		go func() { done <- services.DiagnosticarInter(cfg) }()
+		select {
+		case d := <-done:
+			json.NewEncoder(w).Encode(d)
+		case <-ctx.Done():
+			w.WriteHeader(http.StatusFailedDependency) // 424: o Cloudflare mascara 502/504
+			json.NewEncoder(w).Encode(map[string]string{"erro": "tempo esgotado ao falar com o Inter"})
+		}
 	}
 }
 

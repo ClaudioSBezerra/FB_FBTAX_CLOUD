@@ -26,14 +26,29 @@ type interCachedToken struct {
 
 var interTokenCache sync.Map // key: clientID → *interCachedToken
 
+// interEscopoBanking são os escopos pedidos nas chamadas de saldo/extrato. O saldo é coberto
+// por extrato.read; um escopo a mais que a integração não tenha faz o Inter recusar o token.
+func interEscopoBanking(cfg ProviderConfig) string {
+	if e := strings.TrimSpace(cfg.Scopes); e != "" {
+		return e
+	}
+	return "extrato.read"
+}
+
 func (p *InterProvider) getToken(cfg ProviderConfig) (string, error) {
+	return interObterToken(cfg, interEscopoBanking(cfg))
+}
+
+// interObterToken pede (ou reaproveita do cache) um token OAuth com exatamente os escopos dados.
+func interObterToken(cfg ProviderConfig, escopo string) (string, error) {
 	baseURL := cfg.BaseURL
 	if baseURL == "" {
 		baseURL = interDefaultBaseURL
 	}
 
 	// Verifica cache
-	if v, ok := interTokenCache.Load(cfg.ClientID); ok {
+	chaveCache := cfg.ClientID + "|" + escopo
+	if v, ok := interTokenCache.Load(chaveCache); ok {
 		cached := v.(*interCachedToken)
 		if time.Now().Before(cached.expiresAt) {
 			return cached.accessToken, nil
@@ -49,7 +64,7 @@ func (p *InterProvider) getToken(cfg ProviderConfig) (string, error) {
 	form.Set("grant_type", "client_credentials")
 	form.Set("client_id", cfg.ClientID)
 	form.Set("client_secret", cfg.ClientSecret)
-	form.Set("scope", "extrato.read saldo.read")
+	form.Set("scope", escopo)
 
 	req, _ := http.NewRequest("POST", baseURL+"/oauth/v2/token", strings.NewReader(form.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
@@ -76,7 +91,7 @@ func (p *InterProvider) getToken(cfg ProviderConfig) (string, error) {
 		tok.ExpiresIn = 3600
 	}
 
-	interTokenCache.Store(cfg.ClientID, &interCachedToken{
+	interTokenCache.Store(chaveCache, &interCachedToken{
 		accessToken: tok.AccessToken,
 		expiresAt:   time.Now().Add(time.Duration(tok.ExpiresIn-60) * time.Second),
 	})
@@ -86,32 +101,9 @@ func (p *InterProvider) getToken(cfg ProviderConfig) (string, error) {
 // ── BankProvider ─────────────────────────────────────────────────────────────
 
 func (p *InterProvider) GetSaldo(cfg ProviderConfig) (*BankSaldo, error) {
-	baseURL := cfg.BaseURL
-	if baseURL == "" {
-		baseURL = interDefaultBaseURL
-	}
-	token, err := p.getToken(cfg)
-	if err != nil {
-		return nil, err
-	}
-	client, err := buildMTLSClient(cfg.CertPEM, cfg.KeyPEM)
-	if err != nil {
-		return nil, err
-	}
-
-	req, _ := http.NewRequest("GET", baseURL+"/banking/v3/saldo", nil)
-	req.Header.Set("Authorization", "Bearer "+token)
-	req.Header.Set("x-conta-corrente", cfg.ContaCorrente)
-
-	resp, err := client.Do(req)
+	raw, _, err := interBankingGET(cfg, "/saldo", "")
 	if err != nil {
 		return nil, fmt.Errorf("inter saldo: %w", err)
-	}
-	defer resp.Body.Close()
-	raw, _ := io.ReadAll(resp.Body)
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("inter saldo HTTP %d: %s", resp.StatusCode, string(raw))
 	}
 	var s struct {
 		Disponivel float64 `json:"disponivel"`
@@ -123,34 +115,51 @@ func (p *InterProvider) GetSaldo(cfg ProviderConfig) (*BankSaldo, error) {
 	return &BankSaldo{Disponivel: s.Disponivel, Bloqueado: s.Bloqueado}, nil
 }
 
-func (p *InterProvider) GetExtrato(cfg ProviderConfig, dataInicio, dataFim string) ([]BankTransacao, error) {
+// interBankingGET chama um endpoint do Banking tentando v2 e, se a rota não existir (404), v3.
+// Devolve o corpo e a versão que respondeu.
+func interBankingGET(cfg ProviderConfig, caminho, query string) ([]byte, string, error) {
 	baseURL := cfg.BaseURL
 	if baseURL == "" {
 		baseURL = interDefaultBaseURL
 	}
-	token, err := p.getToken(cfg)
+	token, err := interObterToken(cfg, interEscopoBanking(cfg))
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 	client, err := buildMTLSClient(cfg.CertPEM, cfg.KeyPEM)
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
+	var ultimo error
+	for _, versao := range []string{"v2", "v3"} {
+		u := baseURL + "/banking/" + versao + caminho
+		if query != "" {
+			u += "?" + query
+		}
+		req, _ := http.NewRequest("GET", u, nil)
+		req.Header.Set("Authorization", "Bearer "+token)
+		req.Header.Set("x-conta-corrente", cfg.ContaCorrente)
+		resp, err := client.Do(req)
+		if err != nil {
+			return nil, "", err
+		}
+		raw, _ := io.ReadAll(io.LimitReader(resp.Body, 8<<20))
+		resp.Body.Close()
+		if resp.StatusCode == http.StatusOK {
+			return raw, versao, nil
+		}
+		ultimo = fmt.Errorf("HTTP %d (%s): %s", resp.StatusCode, versao, strings.TrimSpace(string(raw)))
+		if resp.StatusCode != http.StatusNotFound {
+			return nil, versao, ultimo
+		}
+	}
+	return nil, "", ultimo
+}
 
-	u := fmt.Sprintf("%s/banking/v3/extrato?dataInicio=%s&dataFim=%s", baseURL, dataInicio, dataFim)
-	req, _ := http.NewRequest("GET", u, nil)
-	req.Header.Set("Authorization", "Bearer "+token)
-	req.Header.Set("x-conta-corrente", cfg.ContaCorrente)
-
-	resp, err := client.Do(req)
+func (p *InterProvider) GetExtrato(cfg ProviderConfig, dataInicio, dataFim string) ([]BankTransacao, error) {
+	raw, _, err := interBankingGET(cfg, "/extrato", "dataInicio="+dataInicio+"&dataFim="+dataFim)
 	if err != nil {
 		return nil, fmt.Errorf("inter extrato: %w", err)
-	}
-	defer resp.Body.Close()
-	raw, _ := io.ReadAll(resp.Body)
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("inter extrato HTTP %d: %s", resp.StatusCode, string(raw))
 	}
 
 	var ex struct {
