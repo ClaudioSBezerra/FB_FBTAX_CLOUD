@@ -51,8 +51,10 @@ const mascaraDoc = (s: string) => {
 
 // Contraparte do lançamento a partir do detalhe do extrato enriquecido (quem pagou / quem recebeu).
 function contraparte(l: Lancamento): { nome: string; doc: string } | null {
-  const d = l.detalhes
-  if (!d) return null
+  // O JSON guardado é o lançamento inteiro; pagador/recebedor ficam no objeto interno "detalhes".
+  const raiz = l.detalhes
+  if (!raiz) return null
+  const d = (raiz.detalhes && typeof raiz.detalhes === 'object' ? raiz.detalhes : raiz) as Record<string, unknown>
   const t = (k: string) => (typeof d[k] === 'string' ? (d[k] as string).trim() : '')
   const credito = l.tipo === 'credito'
   const nome = credito ? t('nomePagador') : (t('nomeRecebedor') || t('nomeDestinatario'))
