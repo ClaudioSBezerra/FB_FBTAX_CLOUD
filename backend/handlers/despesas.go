@@ -104,6 +104,8 @@ func DespesasHandler(db *sql.DB) http.HandlerFunc {
 			despesasImportar(w, r, db)
 		case r.Method == http.MethodPost && action == "status":
 			despesasStatus(w, r, db)
+		case r.Method == http.MethodPost && action == "ler":
+			despesasLerIA(w, r, db)
 		case r.Method == http.MethodPost:
 			despesasCriar(w, r, db)
 		case r.Method == http.MethodPut:
@@ -157,7 +159,23 @@ func despesasListar(w http.ResponseWriter, r *http.Request, db *sql.DB) {
 			"valor": valor, "status": status, "obs": obs, "comprovante_id": comp, "comprovante_nome": compNome,
 			"nota_debito_id": nota, "nota_codigo": notaCod})
 	}
-	nfseJSON(w, http.StatusOK, map[string]any{"despesas": out, "tipos": services.TiposDespesaViagem})
+	// comprovantes enviados nos últimos 60 dias que ainda não geraram despesa (candidatos à leitura por IA)
+	pend := []map[string]string{}
+	pr, err := db.QueryContext(r.Context(), `SELECT c.id, c.nome FROM financeiro.despesas_comprovantes c
+		WHERE c.created_at > NOW() - INTERVAL '60 days'
+		  AND NOT EXISTS (SELECT 1 FROM financeiro.despesas_viagem d WHERE d.comprovante_id = c.id)
+		ORDER BY c.nome`)
+	if err == nil {
+		for pr.Next() {
+			var id, nome string
+			if pr.Scan(&id, &nome) == nil {
+				pend = append(pend, map[string]string{"id": id, "nome": nome})
+			}
+		}
+		pr.Close()
+	}
+	nfseJSON(w, http.StatusOK, map[string]any{"despesas": out, "tipos": services.TiposDespesaViagem,
+		"comprovantes_sem_despesa": pend, "ia_configurada": os.Getenv("ANTHROPIC_API_KEY") != ""})
 }
 
 func despesasCriar(w http.ResponseWriter, r *http.Request, db *sql.DB) {
@@ -308,6 +326,76 @@ func despesasImportar(w http.ResponseWriter, r *http.Request, db *sql.DB) {
 		return
 	}
 	nfseJSON(w, http.StatusCreated, map[string]any{"importadas": len(req.Despesas), "comprovantes_nao_encontrados": uniq(semComprovante)})
+}
+
+// lerReciboIA é variável só para os testes não chamarem a API de verdade.
+var lerReciboIA = services.LerReciboIA
+
+// despesasLerIA lê UM comprovante com IA e grava as despesas encontradas como pendentes. A tela
+// chama um arquivo por vez: uma leitura leva dezenas de segundos e o proxy corta pedidos longos.
+func despesasLerIA(w http.ResponseWriter, r *http.Request, db *sql.DB) {
+	var req struct {
+		ClienteID     string `json:"cliente_id"`
+		ComprovanteID string `json:"comprovante_id"`
+		Reler         bool   `json:"reler"`
+	}
+	if json.NewDecoder(io.LimitReader(r.Body, 8<<10)).Decode(&req) != nil || !reUUIDNFS.MatchString(req.ClienteID) || !reUUIDNFS.MatchString(req.ComprovanteID) {
+		nfseErro(w, http.StatusBadRequest, "informe o cliente e o comprovante")
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 100*time.Second)
+	defer cancel()
+	var nome, ct string
+	var dados []byte
+	if err := db.QueryRowContext(ctx, `SELECT nome, content_type, dados FROM financeiro.despesas_comprovantes WHERE id=$1`, req.ComprovanteID).Scan(&nome, &ct, &dados); err != nil {
+		nfseErro(w, http.StatusNotFound, "comprovante não encontrado")
+		return
+	}
+	if !req.Reler {
+		var ja int
+		db.QueryRowContext(ctx, `SELECT COUNT(*) FROM financeiro.despesas_viagem WHERE comprovante_id=$1`, req.ComprovanteID).Scan(&ja)
+		if ja > 0 {
+			nfseErro(w, http.StatusConflict, nome+": já foi lido ("+fmt.Sprint(ja)+" despesa(s) ligada(s) a ele)")
+			return
+		}
+	}
+	lidas, err := lerReciboIA(ctx, nome, ct, dados)
+	if err != nil {
+		log.Printf("[Despesas] leitura IA de %s: %v", nome, err)
+		if errors.Is(err, services.ErrIANaoConfigurada) {
+			nfseErro(w, http.StatusConflict, err.Error())
+			return
+		}
+		// 424 e não 502/504: o Cloudflare troca o corpo desses dois e a mensagem some.
+		nfseErro(w, http.StatusFailedDependency, nome+": não consegui ler agora ("+err.Error()+")")
+		return
+	}
+	ignoradas := []string{}
+	gravadas := 0
+	for _, d := range lidas {
+		desc := strings.Join(strings.Fields(d.Descricao), " ")
+		if _, err := time.Parse("2006-01-02", d.Data); err != nil || d.Valor <= 0 || desc == "" || !services.TipoDespesaValido(d.TipoDespesa) {
+			ignoradas = append(ignoradas, fmt.Sprintf("%s (R$ %.2f): data ou valor ilegível, cadastre à mão", desc, d.Valor))
+			continue
+		}
+		obs := strings.TrimSpace(d.Obs)
+		var igual int
+		db.QueryRowContext(ctx, `SELECT COUNT(*) FROM financeiro.despesas_viagem WHERE cliente_id=$1 AND data=$2 AND valor=$3::numeric AND tipo_despesa=$4`,
+			req.ClienteID, d.Data, d.Valor, d.TipoDespesa).Scan(&igual)
+		if igual > 0 {
+			obs = strings.TrimSpace(obs + " · possível duplicidade: já há despesa igual")
+		}
+		obs = strings.TrimSpace(obs + " · lido por IA, confira")
+		if _, err := db.ExecContext(ctx, `
+			INSERT INTO financeiro.despesas_viagem (cliente_id, data, tipo_despesa, descricao, valor, comprovante_id, status, obs)
+			VALUES ($1,$2,$3,$4,$5,$6,'pendente',$7)`, req.ClienteID, d.Data, d.TipoDespesa, desc, d.Valor, req.ComprovanteID, strings.TrimPrefix(obs, " · ")); err != nil {
+			log.Printf("[Despesas] gravar leitura: %v", err)
+			nfseErro(w, http.StatusInternalServerError, "erro ao gravar as despesas lidas")
+			return
+		}
+		gravadas++
+	}
+	nfseJSON(w, http.StatusOK, map[string]any{"arquivo": nome, "lidas": gravadas, "ignoradas": ignoradas})
 }
 
 func uniq(s []string) []string {

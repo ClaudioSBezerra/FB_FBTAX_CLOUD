@@ -45,6 +45,14 @@ APP_URL=https://fbtax.cloud
 ZAI_API_KEY=your_zai_api_key_here
 
 # ========================================
+# ANTHROPIC - Leitura de recibos/cupons (Reembolsos)
+# ========================================
+# Chave da API da Anthropic (console.anthropic.com). Sem ela, a leitura por IA fica desligada e
+# a importacao por JSON/cadastro manual continuam funcionando. Os comprovantes sao enviados a
+# Anthropic para leitura. Modelo usado: claude-opus-5-5.
+ANTHROPIC_API_KEY=
+
+# ========================================
 # RECEITA FEDERAL - API CBS/IBS
 # ========================================
 RFB_API_URL=https://api.receitafederal.gov.br

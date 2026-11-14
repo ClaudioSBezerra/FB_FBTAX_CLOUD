@@ -70,6 +70,9 @@ export default function ReembolsosPage() {
   const [cnpjDestino, setCnpjDestino] = useState(lembrado('reemb.cnpj_destino'))
   const [consultando, setConsultando] = useState(false)
   const [email, setEmail] = useState<EmailForm | null>(null)
+  const [semDespesa, setSemDespesa] = useState<{ id: string; nome: string }[]>([])
+  const [iaOk, setIaOk] = useState(true)
+  const [progresso, setProgresso] = useState('')
 
   const carregar = useCallback(async () => {
     if (clienteId) {
@@ -78,6 +81,8 @@ export default function ReembolsosPage() {
         const j = await res.json()
         setDespesas(j.despesas ?? [])
         setTipos(j.tipos ?? [])
+        setSemDespesa(j.comprovantes_sem_despesa ?? [])
+        setIaOk(j.ia_configurada !== false)
       }
     } else {
       setDespesas([])
@@ -134,7 +139,33 @@ export default function ReembolsosPage() {
       if (!res.ok) return toast.error(await erroDe(res))
       const j = await res.json()
       toast.success(`${j.comprovantes.length} comprovante(s) guardado(s)`)
+      if (clienteId && iaOk) await lerComIA(j.comprovantes)
+      else carregar()
     } finally { setOcupado(false) }
+  }
+
+  // Lê um comprovante por vez: cada leitura leva dezenas de segundos e o proxy corta pedidos longos.
+  const lerComIA = async (lista: { id: string; nome: string }[]) => {
+    if (!clienteId) return toast.error('Escolha o cliente antes de ler os comprovantes')
+    let total = 0
+    const avisos: string[] = []
+    for (let i = 0; i < lista.length; i++) {
+      setProgresso(`Lendo ${i + 1} de ${lista.length}: ${lista[i].nome}…`)
+      try {
+        const res = await fetch('/api/financeiro/despesas?action=ler', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ cliente_id: clienteId, comprovante_id: lista[i].id }),
+        })
+        if (!res.ok) { avisos.push(await erroDe(res)); continue }
+        const j = await res.json()
+        total += j.lidas
+        ;(j.ignoradas ?? []).forEach((m: string) => avisos.push(`${lista[i].nome}: ${m}`))
+      } catch { avisos.push(`${lista[i].nome}: falha de conexão`) }
+    }
+    setProgresso('')
+    toast.success(`${total} despesa(s) lida(s) — revise e aprove`)
+    avisos.slice(0, 6).forEach(a => toast.warning(a, { duration: 12000 }))
+    carregar()
   }
 
   const importar = async (file: File | null) => {
@@ -295,7 +326,19 @@ export default function ReembolsosPage() {
             <Label>Importar lista de despesas (JSON) para o cliente escolhido</Label>
             <Input type="file" accept="application/json,.json" disabled={ocupado || !clienteId} onChange={e => { importar(e.target.files?.[0] ?? null); e.target.value = '' }} />
           </div>
-          <p className="text-xs text-gray-500 md:col-span-2">Envie primeiro os comprovantes: a importação liga cada despesa ao arquivo pelo nome.</p>
+          <div className="md:col-span-2 space-y-2">
+            {semDespesa.length > 0 && (
+              <div className="flex flex-wrap items-center gap-3 border rounded p-3 bg-blue-50 text-sm">
+                <span>{semDespesa.length} comprovante(s) enviado(s) ainda sem despesa.</span>
+                <Button size="sm" disabled={ocupado || !clienteId || !iaOk} onClick={async () => { setOcupado(true); try { await lerComIA(semDespesa) } finally { setOcupado(false) } }}>
+                  Ler com IA
+                </Button>
+              </div>
+            )}
+            {progresso && <p className="text-sm text-blue-700">{progresso}</p>}
+            {!iaOk && <p className="text-xs text-red-700">A leitura por IA não está configurada (ANTHROPIC_API_KEY). Use a importação por JSON ou cadastre à mão.</p>}
+            <p className="text-xs text-gray-500">Ao enviar os comprovantes com o cliente escolhido, a IA lê cada um e cria as despesas como <b>pendentes</b>, com avisos (itens pessoais, contingência, data ilegível). Os arquivos são enviados à Anthropic para a leitura. Você revisa e aprova abaixo. A importação por JSON continua disponível.</p>
+          </div>
         </CardContent>
       </Card>
 

@@ -3,6 +3,7 @@ package handlers
 import (
 	"archive/zip"
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"mime/multipart"
@@ -242,5 +243,85 @@ func TestDespesasReembolso_FluxoCompleto(t *testing.T) {
 	db.Exec(`UPDATE financeiro.titulos_receber SET status='pago', pago_em=CURRENT_DATE, valor_pago=valor WHERE id=$1`, raw["titulo_id"])
 	if rr := js(notas, http.MethodPost, "/?action=cancelar", map[string]any{"id": raw["id"]}); rr.Code != http.StatusConflict {
 		t.Errorf("cancelar nota paga: %d", rr.Code)
+	}
+}
+
+func TestDespesasLerIA(t *testing.T) {
+	db := nfseTestDB(t)
+	suf := fmt.Sprintf("%d", time.Now().UnixNano())
+	var cli, comp string
+	if err := db.QueryRow(`INSERT INTO financeiro.clientes (razao_social, cnpj) VALUES ('LEITURA IA TESTE', $1) RETURNING id`, suf[len(suf)-14:]).Scan(&cli); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.QueryRow(`INSERT INTO financeiro.despesas_comprovantes (nome, content_type, dados) VALUES ('teste-despesa-ia.pdf','application/pdf','%PDF-1.4') RETURNING id`).Scan(&comp); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		db.Exec(`DELETE FROM financeiro.despesas_viagem WHERE cliente_id=$1`, cli)
+		db.Exec(`DELETE FROM financeiro.despesas_comprovantes WHERE id=$1`, comp)
+		db.Exec(`DELETE FROM financeiro.clientes WHERE id=$1`, cli)
+	})
+	original := lerReciboIA
+	t.Cleanup(func() { lerReciboIA = original })
+	chamadas := 0
+	lerReciboIA = func(ctx context.Context, nome, ct string, dados []byte) ([]services.DespesaLida, error) {
+		chamadas++
+		return []services.DespesaLida{
+			{Data: "2026-11-14", TipoDespesa: "ALIMENTAÇÃO - ALMOÇO", Descricao: "Delivery  Com.Pão", Valor: 65.83},
+			{Data: "2026-11-14", TipoDespesa: "OUTRAS", Descricao: "Bembom", Valor: 44.95, Obs: "itens pessoais"},
+			{Data: "", TipoDespesa: "ALIMENTAÇÃO - JANTAR", Descricao: "Aads Refeições", Valor: 44.30, Obs: "data ilegível"},
+			{Data: "2026-11-14", TipoDespesa: "TIPO INVENTADO", Descricao: "x", Valor: 1},
+		}, nil
+	}
+	h := DespesasHandler(db)
+	ler := func(reler bool) *httptest.ResponseRecorder {
+		b, _ := json.Marshal(map[string]any{"cliente_id": cli, "comprovante_id": comp, "reler": reler})
+		return chamar(h, http.MethodPost, "/?action=ler", b, "application/json")
+	}
+	rr := ler(false)
+	if rr.Code != 200 {
+		t.Fatalf("ler: %d %s", rr.Code, rr.Body)
+	}
+	var out struct {
+		Lidas     int
+		Ignoradas []string
+	}
+	json.Unmarshal(rr.Body.Bytes(), &out)
+	if out.Lidas != 2 || len(out.Ignoradas) != 2 {
+		t.Fatalf("lidas %d, ignoradas %v", out.Lidas, out.Ignoradas)
+	}
+	var status, obs, desc string
+	db.QueryRow(`SELECT status, obs, descricao FROM financeiro.despesas_viagem WHERE cliente_id=$1 AND valor=44.95`, cli).Scan(&status, &obs, &desc)
+	if status != "pendente" || !strings.Contains(obs, "itens pessoais") || !strings.Contains(obs, "lido por IA") {
+		t.Errorf("despesa lida: %s %q", status, obs)
+	}
+	db.QueryRow(`SELECT descricao FROM financeiro.despesas_viagem WHERE cliente_id=$1 AND valor=65.83`, cli).Scan(&desc)
+	if desc != "Delivery Com.Pão" {
+		t.Errorf("descrição normalizada: %q", desc)
+	}
+	// ler de novo o mesmo arquivo não duplica sem pedir
+	if rr := ler(false); rr.Code != http.StatusConflict || chamadas != 1 {
+		t.Errorf("releitura sem pedir: %d (chamadas %d)", rr.Code, chamadas)
+	}
+	// releitura pedida marca a duplicidade
+	if rr := ler(true); rr.Code != 200 {
+		t.Fatalf("reler: %d", rr.Code)
+	}
+	db.QueryRow(`SELECT obs FROM financeiro.despesas_viagem WHERE cliente_id=$1 AND valor=65.83 ORDER BY created_at DESC LIMIT 1`, cli).Scan(&obs)
+	if !strings.Contains(obs, "duplicidade") {
+		t.Errorf("duplicidade não sinalizada: %q", obs)
+	}
+	// IA sem chave vira 409 com mensagem clara; falha externa vira 424 (nunca 502/504)
+	lerReciboIA = func(ctx context.Context, nome, ct string, dados []byte) ([]services.DespesaLida, error) {
+		return nil, services.ErrIANaoConfigurada
+	}
+	if rr := ler(true); rr.Code != http.StatusConflict {
+		t.Errorf("sem chave: %d", rr.Code)
+	}
+	lerReciboIA = func(ctx context.Context, nome, ct string, dados []byte) ([]services.DespesaLida, error) {
+		return nil, fmt.Errorf("timeout")
+	}
+	if rr := ler(true); rr.Code != http.StatusFailedDependency {
+		t.Errorf("falha externa: %d", rr.Code)
 	}
 }

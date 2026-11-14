@@ -18,6 +18,7 @@ services:
       - SMTP_PORT=${SMTP_PORT}
       - SMTP_USER=${SMTP_USER}
       - SMTP_PASSWORD=${SMTP_PASSWORD}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
       - SMTP_FROM=${SMTP_FROM}
       - ALLOWED_ORIGINS=${ALLOWED_ORIGINS:-https://www.fbtax.cloud}
     depends_on:
