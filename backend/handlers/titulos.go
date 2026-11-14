@@ -41,9 +41,9 @@ func validarTitulo(db *sql.DB, req *tituloReq) string {
 		return "cliente obrigatório"
 	}
 	switch req.Tipo {
-	case "mensalidade", "adesao", "projeto", "outro":
+	case "mensalidade", "adesao", "projeto", "outro", "reembolso":
 	default:
-		return "tipo deve ser mensalidade, adesao, projeto ou outro"
+		return "tipo deve ser mensalidade, adesao, projeto, reembolso ou outro"
 	}
 	if req.Valor <= 0 {
 		return "valor deve ser maior que zero"

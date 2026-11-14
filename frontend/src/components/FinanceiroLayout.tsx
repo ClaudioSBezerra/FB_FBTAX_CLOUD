@@ -11,6 +11,7 @@ const navItems = [
   { label: 'Contratos', path: '/admin/financeiro/contratos' },
   { label: 'NFS-e', path: '/admin/financeiro/nfse' },
   { label: 'Contas a Receber', path: '/admin/financeiro/receber' },
+  { label: 'Reembolsos', path: '/admin/financeiro/reembolsos' },
   { label: 'Manutenção do banco', path: '/admin/financeiro/bancos' },
   { label: 'Sincronização bancária', path: '/admin/financeiro/bancos/sincronizacao' },
   { label: 'Termos de Entrega', path: '/admin/financeiro/entregas' },

@@ -11,7 +11,7 @@ interface Titulo {
   cliente_id: string
   cliente: string
   contrato_id: string
-  tipo: 'mensalidade' | 'adesao' | 'projeto' | 'outro'
+  tipo: 'mensalidade' | 'adesao' | 'projeto' | 'outro' | 'reembolso'
   competencia: string
   descricao: string
   valor: number
@@ -32,7 +32,7 @@ interface Candidato { transacao_id: string; data: string; descricao: string; val
 const brl = (v: number) => v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
 const dia = (s?: string) => (s ? s.slice(0, 10).split('-').reverse().join('/') : '—')
 const hoje = () => new Date().toISOString().slice(0, 10)
-const TIPOS = { mensalidade: 'Mensalidade', adesao: 'Adesão / setup', projeto: 'Projeto', outro: 'Outro' } as const
+const TIPOS = { mensalidade: 'Mensalidade', adesao: 'Adesão / setup', projeto: 'Projeto', reembolso: 'Reembolso', outro: 'Outro' } as const
 
 async function erroDe(res: Response): Promise<string> {
   const t = await res.text().catch(() => '')
