@@ -196,7 +196,11 @@ export default function ReembolsosPage() {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ cliente_id: clienteId, comprovante_id: cmpArquivo, modelo: m.id, simular: true }),
         })
-        if (!res.ok) { setCmp(c => [...c, { modelo: m, ms: 0, entrada: 0, saida: 0, custo: 0, total: 0, despesas: [], erro: await erroDe(res) }]); continue }
+        if (!res.ok) {
+          const erro = await erroDe(res)
+          setCmp(c => [...c, { modelo: m, ms: 0, entrada: 0, saida: 0, custo: 0, total: 0, despesas: [], erro }])
+          continue
+        }
         const j = await res.json()
         const custo = (j.uso.entrada_tokens * m.entrada_mtok + j.uso.saida_tokens * m.saida_mtok) / 1e6
         setCmp(c => [...c, { modelo: m, ms: j.uso.duracao_ms, entrada: j.uso.entrada_tokens, saida: j.uso.saida_tokens, custo, total: j.total, despesas: j.despesas ?? [] }])
