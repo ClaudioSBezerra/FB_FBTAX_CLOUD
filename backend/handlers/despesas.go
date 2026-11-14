@@ -24,10 +24,12 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
 	"net/http"
+	"os"
 	"strings"
 	"time"
 
@@ -404,6 +406,10 @@ func NotasDebitoHandler(db *sql.DB) http.HandlerFunc {
 		switch {
 		case r.Method == http.MethodGet && (action == "xlsx" || action == "zip"):
 			notaDebitoBaixar(w, r, db, action)
+		case r.Method == http.MethodGet && action == "email-previa":
+			notaDebitoEmailPrevia(w, r, db)
+		case r.Method == http.MethodPost && action == "enviar":
+			notaDebitoEnviar(w, r, db)
 		case r.Method == http.MethodGet:
 			notaDebitoListar(w, r, db)
 		case r.Method == http.MethodPost && action == "cancelar":
@@ -419,7 +425,7 @@ func NotasDebitoHandler(db *sql.DB) http.HandlerFunc {
 func notaDebitoListar(w http.ResponseWriter, r *http.Request, db *sql.DB) {
 	rows, err := db.QueryContext(r.Context(), `
 		SELECT n.id, n.cliente_id, c.razao_social, n.codigo, n.emissao::text, n.vencimento::text, n.periodo_ini::text, n.periodo_fim::text,
-		       n.total::float8, n.status, COALESCE(n.titulo_id::text,''), COALESCE(t.status,''),
+		       n.total::float8, n.status, COALESCE(n.titulo_id::text,''), COALESCE(t.status,''), COALESCE(n.enviada_em::text,''),
 		       (SELECT COUNT(*) FROM financeiro.despesas_viagem d WHERE d.nota_debito_id = n.id)
 		FROM financeiro.notas_debito n
 		JOIN financeiro.clientes c ON c.id = n.cliente_id
@@ -432,15 +438,15 @@ func notaDebitoListar(w http.ResponseWriter, r *http.Request, db *sql.DB) {
 	defer rows.Close()
 	out := []map[string]any{}
 	for rows.Next() {
-		var id, cli, razao, cod, em, venc, ini, fim, status, tit, titStatus string
+		var id, cli, razao, cod, em, venc, ini, fim, status, tit, titStatus, enviada string
 		var total float64
 		var n int
-		if err := rows.Scan(&id, &cli, &razao, &cod, &em, &venc, &ini, &fim, &total, &status, &tit, &titStatus, &n); err != nil {
+		if err := rows.Scan(&id, &cli, &razao, &cod, &em, &venc, &ini, &fim, &total, &status, &tit, &titStatus, &enviada, &n); err != nil {
 			nfseErro(w, http.StatusInternalServerError, "erro ao ler notas")
 			return
 		}
 		out = append(out, map[string]any{"id": id, "cliente_id": cli, "cliente": razao, "codigo": cod, "emissao": em, "vencimento": venc,
-			"periodo_ini": ini, "periodo_fim": fim, "total": total, "status": status, "titulo_id": tit, "titulo_status": titStatus, "despesas": n})
+			"periodo_ini": ini, "periodo_fim": fim, "total": total, "status": status, "titulo_id": tit, "titulo_status": titStatus, "enviada_em": enviada, "despesas": n})
 	}
 	nfseJSON(w, http.StatusOK, map[string]any{"notas": out})
 }
@@ -643,23 +649,34 @@ func notaDebitoBaixar(w http.ResponseWriter, r *http.Request, db *sql.DB, action
 		w.Write(xlsx)
 		return
 	}
-	rows, err := db.QueryContext(r.Context(), `
-		SELECT DISTINCT c.id, c.nome, c.dados FROM financeiro.despesas_viagem d
-		JOIN financeiro.despesas_comprovantes c ON c.id = d.comprovante_id WHERE d.nota_debito_id = $1 ORDER BY c.nome, c.id`, id)
+	zipBytes, err := zipComprovantesNota(r.Context(), db, id)
 	if err != nil {
-		nfseErro(w, http.StatusInternalServerError, "erro ao ler comprovantes")
+		nfseErro(w, http.StatusInternalServerError, "erro ao montar o zip dos comprovantes")
 		return
+	}
+	w.Header().Set("Content-Type", "application/zip")
+	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%q", codigo+"-comprovantes.zip"))
+	w.Write(zipBytes)
+}
+
+// zipComprovantesNota reúne os comprovantes das despesas da nota (cada arquivo uma vez só).
+func zipComprovantesNota(ctx context.Context, db *sql.DB, notaID string) ([]byte, error) {
+	rows, err := db.QueryContext(ctx, `
+		SELECT DISTINCT c.id, c.nome, c.dados FROM financeiro.despesas_viagem d
+		JOIN financeiro.despesas_comprovantes c ON c.id = d.comprovante_id WHERE d.nota_debito_id = $1 ORDER BY c.nome, c.id`, notaID)
+	if err != nil {
+		return nil, err
 	}
 	defer rows.Close()
 	var buf bytes.Buffer
 	zw := zip.NewWriter(&buf)
 	usados := map[string]bool{}
+	n := 0
 	for rows.Next() {
 		var cid, nome string
 		var dados []byte
 		if err := rows.Scan(&cid, &nome, &dados); err != nil {
-			nfseErro(w, http.StatusInternalServerError, "erro ao ler comprovantes")
-			return
+			return nil, err
 		}
 		if usados[nome] {
 			nome = cid[:8] + "_" + nome
@@ -667,15 +684,193 @@ func notaDebitoBaixar(w http.ResponseWriter, r *http.Request, db *sql.DB, action
 		usados[nome] = true
 		fw, err := zw.Create(nome)
 		if err != nil {
-			nfseErro(w, http.StatusInternalServerError, "erro ao montar o zip")
-			return
+			return nil, err
 		}
 		fw.Write(dados)
+		n++
 	}
-	zw.Close()
-	w.Header().Set("Content-Type", "application/zip")
-	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%q", codigo+"-comprovantes.zip"))
-	w.Write(buf.Bytes())
+	if err := zw.Close(); err != nil {
+		return nil, err
+	}
+	if n == 0 {
+		return nil, nil
+	}
+	return buf.Bytes(), nil
+}
+
+// enviarEmailNota é variável só para os testes não falarem com o SMTP de verdade.
+var enviarEmailNota = services.EnviarEmailComAnexos
+
+type notaEmailInfo struct {
+	codigo, status, solicitante, cliente, clienteEmail, empresa, banco, agencia, conta string
+	emissao, vencimento, ini, fim                                                      time.Time
+	total                                                                              float64
+	enviadaEm                                                                          sql.NullTime
+	enviadaPara                                                                        sql.NullString
+}
+
+func carregarNotaEmail(ctx context.Context, db *sql.DB, id string) (*notaEmailInfo, error) {
+	var n notaEmailInfo
+	var sol, mail, banco, ag, conta, empresa sql.NullString
+	err := db.QueryRowContext(ctx, `
+		SELECT n.codigo, n.status, n.solicitante, c.razao_social, c.email, n.emissao, n.vencimento, n.periodo_ini, n.periodo_fim,
+		       n.total::float8, n.enviada_em, n.enviada_para
+		FROM financeiro.notas_debito n JOIN financeiro.clientes c ON c.id = n.cliente_id WHERE n.id = $1`, id).Scan(
+		&n.codigo, &n.status, &sol, &n.cliente, &mail, &n.emissao, &n.vencimento, &n.ini, &n.fim, &n.total, &n.enviadaEm, &n.enviadaPara)
+	if err != nil {
+		return nil, err
+	}
+	n.solicitante, n.clienteEmail = sol.String, mail.String
+	db.QueryRowContext(ctx, `SELECT razao_social FROM financeiro.empresas ORDER BY created_at LIMIT 1`).Scan(&empresa)
+	db.QueryRowContext(ctx, `SELECT banco, agencia, conta FROM financeiro.dados_bancarios ORDER BY created_at LIMIT 1`).Scan(&banco, &ag, &conta)
+	n.empresa, n.banco, n.agencia, n.conta = empresa.String, banco.String, ag.String, conta.String
+	return &n, nil
+}
+
+func (n *notaEmailInfo) assuntoPadrao() string {
+	return "Nota de Débito " + n.codigo + " — Reembolso de despesas de viagem"
+}
+
+func (n *notaEmailInfo) mensagemPadrao(comComprovantes bool) string {
+	var b strings.Builder
+	b.WriteString("Prezados,\n\n")
+	b.WriteString(fmt.Sprintf("Segue em anexo a Nota de Débito %s, referente ao reembolso das despesas de viagem do período de %s a %s, no valor total de %s, com vencimento em %s.\n\n",
+		n.codigo, n.ini.Format("02/01/2006"), n.fim.Format("02/01/2006"), brlTexto(n.total), n.vencimento.Format("02/01/2006")))
+	if comComprovantes {
+		b.WriteString("Os comprovantes das despesas seguem no arquivo ZIP anexo.\n\n")
+	}
+	if n.banco != "" || n.conta != "" {
+		b.WriteString(fmt.Sprintf("Dados para pagamento: banco %s, agência %s, conta corrente %s.\n\n", n.banco, n.agencia, n.conta))
+	}
+	b.WriteString("Atenciosamente,\n")
+	if n.solicitante != "" {
+		b.WriteString(n.solicitante + "\n")
+	}
+	b.WriteString(n.empresa + "\n")
+	return b.String()
+}
+
+func brlTexto(v float64) string {
+	s := fmt.Sprintf("%.2f", v)
+	inteiro, dec := s[:len(s)-3], s[len(s)-2:]
+	var out []byte
+	for i, c := range []byte(inteiro) {
+		if i > 0 && (len(inteiro)-i)%3 == 0 {
+			out = append(out, '.')
+		}
+		out = append(out, c)
+	}
+	return "R$ " + string(out) + "," + dec
+}
+
+func notaDebitoEmailPrevia(w http.ResponseWriter, r *http.Request, db *sql.DB) {
+	id := r.URL.Query().Get("id")
+	if !reUUIDNFS.MatchString(id) {
+		nfseErro(w, http.StatusBadRequest, "id inválido")
+		return
+	}
+	n, err := carregarNotaEmail(r.Context(), db, id)
+	if err != nil {
+		nfseErro(w, http.StatusNotFound, "nota não encontrada")
+		return
+	}
+	out := map[string]any{"assunto": n.assuntoPadrao(), "mensagem": n.mensagemPadrao(true), "para": n.clienteEmail,
+		"remetente": os.Getenv("SMTP_USER"), "cc": os.Getenv("SMTP_USER"), "smtp_configurado": services.GetEmailConfig().Password != "", "status": n.status}
+	if n.enviadaEm.Valid {
+		out["enviada_em"], out["enviada_para"] = n.enviadaEm.Time.In(nfseBRT).Format("02/01/2006 15:04"), n.enviadaPara.String
+	}
+	nfseJSON(w, http.StatusOK, out)
+}
+
+func notaDebitoEnviar(w http.ResponseWriter, r *http.Request, db *sql.DB) {
+	var req struct {
+		ID                 string   `json:"id"`
+		Remetente          string   `json:"remetente"` // vira Reply-To: o envio sai pela conta do SMTP
+		Para               []string `json:"para"`
+		Cc                 []string `json:"cc"`
+		Assunto            string   `json:"assunto"`
+		Mensagem           string   `json:"mensagem"`
+		IncluirComprovante bool     `json:"incluir_comprovantes"`
+		ConfirmarReenvio   bool     `json:"confirmar_reenvio"`
+	}
+	if json.NewDecoder(io.LimitReader(r.Body, 128<<10)).Decode(&req) != nil || !reUUIDNFS.MatchString(req.ID) {
+		nfseErro(w, http.StatusBadRequest, "requisição inválida")
+		return
+	}
+	para, err := services.ValidarEnderecos(req.Para)
+	if err != nil || len(para) == 0 {
+		nfseErro(w, http.StatusBadRequest, "informe um e-mail de destino válido")
+		return
+	}
+	cc, err := services.ValidarEnderecos(req.Cc)
+	if err != nil {
+		nfseErro(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	remetente, err := services.ValidarEnderecos([]string{req.Remetente})
+	if err != nil {
+		nfseErro(w, http.StatusBadRequest, "remetente inválido")
+		return
+	}
+	responderPara := ""
+	if len(remetente) == 1 {
+		responderPara = remetente[0]
+	}
+	if len(para)+len(cc) > 10 {
+		nfseErro(w, http.StatusBadRequest, "no máximo 10 destinatários")
+		return
+	}
+	n, err := carregarNotaEmail(r.Context(), db, req.ID)
+	if err != nil {
+		nfseErro(w, http.StatusNotFound, "nota não encontrada")
+		return
+	}
+	if n.status != "emitida" {
+		nfseErro(w, http.StatusConflict, "a nota está cancelada: não pode ser enviada")
+		return
+	}
+	if n.enviadaEm.Valid && !req.ConfirmarReenvio {
+		nfseErro(w, http.StatusConflict, "esta nota já foi enviada em "+n.enviadaEm.Time.In(nfseBRT).Format("02/01/2006 15:04")+" para "+n.enviadaPara.String+": confirme o reenvio")
+		return
+	}
+	assunto := strings.TrimSpace(req.Assunto)
+	if assunto == "" {
+		assunto = n.assuntoPadrao()
+	}
+	mensagem := strings.TrimSpace(req.Mensagem)
+	if mensagem == "" {
+		mensagem = n.mensagemPadrao(req.IncluirComprovante)
+	}
+	var xlsx []byte
+	if err := db.QueryRowContext(r.Context(), `SELECT xlsx FROM financeiro.notas_debito WHERE id=$1`, req.ID).Scan(&xlsx); err != nil {
+		nfseErro(w, http.StatusInternalServerError, "erro ao ler a planilha")
+		return
+	}
+	anexos := []services.AnexoEmail{{Nome: n.codigo + ".xlsx", Tipo: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", Dados: xlsx}}
+	if req.IncluirComprovante {
+		z, err := zipComprovantesNota(r.Context(), db, req.ID)
+		if err != nil {
+			nfseErro(w, http.StatusInternalServerError, "erro ao montar o zip dos comprovantes")
+			return
+		}
+		if z != nil {
+			anexos = append(anexos, services.AnexoEmail{Nome: n.codigo + "-comprovantes.zip", Tipo: "application/zip", Dados: z})
+		}
+	}
+	if err := enviarEmailNota(para, cc, responderPara, assunto, mensagem, anexos); err != nil {
+		log.Printf("[NotaDebito] envio de %s falhou: %v", n.codigo, err)
+		switch {
+		case errors.Is(err, services.ErrSMTPNaoConfigurado):
+			nfseErro(w, http.StatusConflict, "o e-mail do sistema não está configurado (SMTP_PASSWORD)")
+		case errors.Is(err, services.ErrAnexosGrandes):
+			nfseErro(w, http.StatusRequestEntityTooLarge, err.Error())
+		default:
+			nfseErro(w, http.StatusFailedDependency, "o servidor de e-mail recusou o envio; confira as configurações de SMTP")
+		}
+		return
+	}
+	db.ExecContext(r.Context(), `UPDATE financeiro.notas_debito SET enviada_em=NOW(), enviada_para=$2 WHERE id=$1`, req.ID, strings.Join(append(append([]string{}, para...), cc...), ", "))
+	nfseJSON(w, http.StatusOK, map[string]any{"enviada": true, "remetente": responderPara, "para": para, "cc": cc, "anexos": len(anexos)})
 }
 
 func notaDebitoCancelar(w http.ResponseWriter, r *http.Request, db *sql.DB) {

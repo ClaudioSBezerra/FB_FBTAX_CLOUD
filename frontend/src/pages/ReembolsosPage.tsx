@@ -3,6 +3,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
+import { Textarea } from '@/components/ui/textarea'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { toast } from 'sonner'
 
@@ -14,7 +15,11 @@ interface Despesa {
 }
 interface Nota {
   id: string; cliente: string; codigo: string; emissao: string; vencimento: string; periodo_ini: string; periodo_fim: string
-  total: number; status: 'emitida' | 'cancelada'; titulo_status: string; despesas: number
+  total: number; status: 'emitida' | 'cancelada'; titulo_status: string; despesas: number; enviada_em: string
+}
+interface EmailForm {
+  id: string; codigo: string; remetente: string; para: string; cc: string; assunto: string; mensagem: string
+  comprovantes: boolean; jaEnviada: string; smtpOk: boolean
 }
 
 const brl = (v: number) => v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
@@ -64,6 +69,7 @@ export default function ReembolsosPage() {
   const [ocupado, setOcupado] = useState(false)
   const [cnpjDestino, setCnpjDestino] = useState(lembrado('reemb.cnpj_destino'))
   const [consultando, setConsultando] = useState(false)
+  const [email, setEmail] = useState<EmailForm | null>(null)
 
   const carregar = useCallback(async () => {
     if (clienteId) {
@@ -196,6 +202,38 @@ export default function ReembolsosPage() {
       if (!res.ok) return toast.error(await erroDe(res))
       const j = await res.json()
       toast.success(`Nota ${j.codigo} gerada (${brl(j.total)}, vence ${dia(j.vencimento)}). Título criado no Contas a Receber.`)
+      carregar()
+    } finally { setOcupado(false) }
+  }
+
+  const abrirEmail = async (n: Nota) => {
+    const res = await fetch(`/api/financeiro/notas-debito?action=email-previa&id=${n.id}`)
+    if (!res.ok) return toast.error(await erroDe(res))
+    const j = await res.json()
+    setEmail({
+      id: n.id, codigo: n.codigo, remetente: lembrado('reemb.remetente', j.remetente ?? ''), para: lembrado('reemb.para', j.para ?? ''),
+      cc: lembrado('reemb.cc', j.cc ?? ''), assunto: j.assunto, mensagem: j.mensagem, comprovantes: true,
+      jaEnviada: j.enviada_em ? `${j.enviada_em} para ${j.enviada_para}` : '', smtpOk: !!j.smtp_configurado,
+    })
+  }
+
+  const enviarEmail = async () => {
+    if (!email) return
+    const lista = (v: string) => v.split(/[;,]/).map(x => x.trim()).filter(Boolean)
+    if (lista(email.para).length === 0) return toast.error('Informe o e-mail do destinatário')
+    if (email.jaEnviada && !window.confirm(`Esta nota já foi enviada em ${email.jaEnviada}. Enviar de novo?`)) return
+    if (!window.confirm(`Enviar a nota ${email.codigo} para ${lista(email.para).join(', ')}?`)) return
+    setOcupado(true)
+    try {
+      lembrar('reemb.remetente', email.remetente); lembrar('reemb.para', email.para); lembrar('reemb.cc', email.cc)
+      const res = await fetch('/api/financeiro/notas-debito?action=enviar', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: email.id, remetente: email.remetente, para: lista(email.para), cc: lista(email.cc), assunto: email.assunto,
+          mensagem: email.mensagem, incluir_comprovantes: email.comprovantes, confirmar_reenvio: !!email.jaEnviada }),
+      })
+      if (!res.ok) return toast.error(await erroDe(res))
+      toast.success('E-mail enviado')
+      setEmail(null)
       carregar()
     } finally { setOcupado(false) }
   }
@@ -366,6 +404,32 @@ export default function ReembolsosPage() {
         </CardContent>
       </Card>
 
+      {email && (
+        <Card>
+          <CardHeader><CardTitle className="text-base">Enviar a nota {email.codigo} por e-mail</CardTitle></CardHeader>
+          <CardContent className="space-y-3">
+            {!email.smtpOk && <p className="text-sm text-red-700">O e-mail do sistema não está configurado (SMTP_PASSWORD): o envio vai falhar.</p>}
+            {email.jaEnviada && <p className="text-sm text-amber-700">Já enviada em {email.jaEnviada}.</p>}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+              <div><Label>Remetente (as respostas chegam aqui)</Label><Input value={email.remetente} onChange={e => setEmail({ ...email, remetente: e.target.value })} /></div>
+              <div><Label>Destinatário(s)</Label><Input value={email.para} placeholder="financeiro@cliente.com.br" onChange={e => setEmail({ ...email, para: e.target.value })} /></div>
+              <div><Label>Cc</Label><Input value={email.cc} placeholder="separe vários por vírgula" onChange={e => setEmail({ ...email, cc: e.target.value })} /></div>
+            </div>
+            <div><Label>Assunto</Label><Input value={email.assunto} onChange={e => setEmail({ ...email, assunto: e.target.value })} /></div>
+            <div><Label>Mensagem</Label><Textarea rows={9} value={email.mensagem} onChange={e => setEmail({ ...email, mensagem: e.target.value })} /></div>
+            <label className="flex items-center gap-2 text-sm">
+              <input type="checkbox" checked={email.comprovantes} onChange={e => setEmail({ ...email, comprovantes: e.target.checked })} />
+              Anexar o ZIP dos comprovantes (a planilha vai sempre)
+            </label>
+            <p className="text-xs text-gray-500">O e-mail sai pela conta de e-mail do sistema; o remetente informado vai como "responder para".</p>
+            <div className="flex gap-2">
+              <Button disabled={ocupado} onClick={enviarEmail}>Enviar e-mail</Button>
+              <Button variant="ghost" onClick={() => setEmail(null)}>Fechar</Button>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       <Card>
         <CardHeader><CardTitle className="text-base">Notas de débito</CardTitle></CardHeader>
         <CardContent className="overflow-x-auto">
@@ -375,7 +439,7 @@ export default function ReembolsosPage() {
               {notas.length === 0 && <tr><td colSpan={7} className="p-4 text-center text-gray-500">Nenhuma nota gerada.</td></tr>}
               {notas.map(n => (
                 <tr key={n.id} className="border-b">
-                  <td className="p-2 whitespace-nowrap">{n.codigo}<div className="text-xs text-gray-500">{dia(n.emissao)} · {n.despesas} despesa(s)</div></td>
+                  <td className="p-2 whitespace-nowrap">{n.codigo}<div className="text-xs text-gray-500">{dia(n.emissao)} · {n.despesas} despesa(s){n.enviada_em && ` · enviada ${dia(n.enviada_em)}`}</div></td>
                   <td className="p-2">{n.cliente}</td>
                   <td className="p-2 whitespace-nowrap">{dia(n.periodo_ini)} a {dia(n.periodo_fim)}</td>
                   <td className="p-2">{dia(n.vencimento)}</td>
@@ -388,6 +452,7 @@ export default function ReembolsosPage() {
                   <td className="p-2 whitespace-nowrap">
                     <Button size="sm" variant="outline" onClick={() => baixar(`/api/financeiro/notas-debito?action=xlsx&id=${n.id}`, `${n.codigo}.xlsx`)}>Planilha</Button>{' '}
                     <Button size="sm" variant="outline" onClick={() => baixar(`/api/financeiro/notas-debito?action=zip&id=${n.id}`, `${n.codigo}-comprovantes.zip`)}>Comprovantes</Button>{' '}
+                    {n.status === 'emitida' && <Button size="sm" variant="outline" onClick={() => abrirEmail(n)}>E-mail</Button>}{' '}
                     {n.status === 'emitida' && n.titulo_status !== 'pago' && <Button size="sm" variant="ghost" onClick={() => cancelarNota(n)}>Cancelar</Button>}
                   </td>
                 </tr>

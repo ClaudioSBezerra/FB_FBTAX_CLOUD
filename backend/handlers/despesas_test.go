@@ -11,6 +11,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"fb_cloud/services"
 )
 
 func TestDespesasReembolso_FluxoCompleto(t *testing.T) {
@@ -87,7 +89,7 @@ func TestDespesasReembolso_FluxoCompleto(t *testing.T) {
 	var lista struct {
 		Despesas []struct {
 			ID, Status, Descricao, ComprovanteNome string
-			Valor                                   float64
+			Valor                                  float64
 		} `json:"despesas"`
 	}
 	rr = chamar(desp, http.MethodGet, "/?cliente_id="+cli, nil, "")
@@ -163,6 +165,58 @@ func TestDespesasReembolso_FluxoCompleto(t *testing.T) {
 	zr, err := zip.NewReader(bytes.NewReader(rr.Body.Bytes()), int64(rr.Body.Len()))
 	if err != nil || len(zr.File) != 1 || zr.File[0].Name != "teste-despesa-uber.pdf" {
 		t.Fatalf("zip: %v", err)
+	}
+
+	// e-mail: prévia sugere assunto/mensagem; envio valida endereços, leva planilha + zip e registra
+	originalEnvio := enviarEmailNota
+	t.Cleanup(func() { enviarEmailNota = originalEnvio })
+	var enviado struct {
+		para, cc           []string
+		responder, assunto string
+		anexos             []string
+	}
+	enviarEmailNota = func(para, cc []string, responderPara, assunto, corpo string, anexos []services.AnexoEmail) error {
+		enviado.para, enviado.cc, enviado.responder, enviado.assunto = para, cc, responderPara, assunto
+		enviado.anexos = nil
+		for _, a := range anexos {
+			enviado.anexos = append(enviado.anexos, a.Nome)
+		}
+		if !strings.Contains(corpo, "3.887,50") {
+			t.Errorf("mensagem deveria trazer o total: %s", corpo)
+		}
+		return nil
+	}
+	nid := raw["id"].(string)
+	rp := chamar(notas, http.MethodGet, "/?action=email-previa&id="+nid, nil, "")
+	var previa map[string]any
+	dec(rp, &previa)
+	if rp.Code != 200 || !strings.Contains(previa["assunto"].(string), raw["codigo"].(string)) || !strings.Contains(previa["mensagem"].(string), "3.887,50") {
+		t.Fatalf("prévia: %d %v", rp.Code, previa)
+	}
+	if rr := js(notas, http.MethodPost, "/?action=enviar", map[string]any{"id": nid, "para": []string{"sem-arroba"}}); rr.Code != http.StatusBadRequest {
+		t.Errorf("e-mail de destino inválido: %d", rr.Code)
+	}
+	if rr := js(notas, http.MethodPost, "/?action=enviar", map[string]any{"id": nid, "para": []string{"fin@cliente.com.br"}, "remetente": "nao-e-email"}); rr.Code != http.StatusBadRequest {
+		t.Errorf("remetente inválido: %d", rr.Code)
+	}
+	envio := map[string]any{"id": nid, "remetente": "claudio@fortesbezerra.com.br", "para": []string{"fin@cliente.com.br"}, "cc": []string{"eu@fortesbezerra.com.br"}, "incluir_comprovantes": true}
+	if rr := js(notas, http.MethodPost, "/?action=enviar", envio); rr.Code != 200 {
+		t.Fatalf("enviar: %d %s", rr.Code, rr.Body)
+	}
+	if enviado.responder != "claudio@fortesbezerra.com.br" || len(enviado.para) != 1 || len(enviado.cc) != 1 || len(enviado.anexos) != 2 {
+		t.Errorf("envio: %+v", enviado)
+	}
+	var enviadaPara string
+	db.QueryRow(`SELECT COALESCE(enviada_para,'') FROM financeiro.notas_debito WHERE id=$1`, nid).Scan(&enviadaPara)
+	if enviadaPara != "fin@cliente.com.br, eu@fortesbezerra.com.br" {
+		t.Errorf("envio não registrado: %q", enviadaPara)
+	}
+	if rr := js(notas, http.MethodPost, "/?action=enviar", envio); rr.Code != http.StatusConflict {
+		t.Errorf("reenvio sem confirmação deve dar 409: %d", rr.Code)
+	}
+	envio["confirmar_reenvio"] = true
+	if rr := js(notas, http.MethodPost, "/?action=enviar", envio); rr.Code != 200 {
+		t.Errorf("reenvio confirmado: %d", rr.Code)
 	}
 
 	// cancelar a nota cancela o título e libera as despesas
