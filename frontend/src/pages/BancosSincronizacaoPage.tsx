@@ -66,6 +66,7 @@ export default function BancosSincronizacaoPage() {
   const [saldoVivo, setSaldoVivo] = useState<{ disponivel: number; bloqueado: number; consultado_em: string } | null>(null)
   const [ocupado, setOcupado] = useState(false)
   const [sincronizando, setSincronizando] = useState(false)
+  const [amostra, setAmostra] = useState<string | null>(null)
   const timer = useRef<number | undefined>()
 
   const conta = contas.find(c => c.id === contaId)
@@ -110,6 +111,15 @@ export default function BancosSincronizacaoPage() {
       if (!res.ok) return toast.error(await erroDe(res))
       setSaldoVivo(await res.json())
       carregarContas()
+    } finally { setOcupado(false) }
+  }
+
+  // Diagnóstico: mostra o que o Inter devolve para o período, sem gravar nada.
+  const verAmostra = async () => {
+    setOcupado(true); setAmostra('Consultando o Inter…')
+    try {
+      const res = await fetch(`/api/financeiro/bancos/extrato-amostra?conta_id=${contaId}&data_inicio=${inicio}&data_fim=${fim}`)
+      setAmostra(res.ok ? JSON.stringify(await res.json(), null, 2) : await erroDe(res))
     } finally { setOcupado(false) }
   }
 
@@ -164,7 +174,9 @@ export default function BancosSincronizacaoPage() {
             <div className="flex flex-wrap gap-3">
               <Button variant="outline" disabled={!conta?.configurado || ocupado} onClick={consultarSaldo}>Consultar saldo agora</Button>
               <Button disabled={!conta?.configurado || periodoInvalido || sincronizando} onClick={sincronizar}>{sincronizando ? 'Sincronizando…' : 'Sincronizar extrato do período'}</Button>
+              <Button variant="outline" disabled={!conta?.configurado || periodoInvalido || ocupado} onClick={verAmostra}>Diagnóstico: ver resposta do Inter</Button>
             </div>
+            {amostra && <pre className="text-xs overflow-auto max-h-80 bg-white border p-2 whitespace-pre-wrap">{amostra}</pre>}
             <p className="text-xs text-gray-500">O Inter permite 10 consultas por minuto e, no máximo, 90 dias por extrato. Os lançamentos já importados não são duplicados.</p>
           </CardContent>
         </Card>

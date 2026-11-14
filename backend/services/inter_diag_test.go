@@ -341,3 +341,58 @@ func TestInterContaCorrente_Normaliza(t *testing.T) {
 		}
 	}
 }
+
+// O Inter pode enviar valor como texto e a data em outro campo: nada disso pode descartar o lançamento.
+func TestInterExtrato_ToleraValorTextoEDataAlternativa(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/oauth/v2/token", func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(`{"access_token":"t","expires_in":3600,"scope":"extrato.read"}`))
+	})
+	mux.HandleFunc("/banking/v2/extrato/completo", func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(`{"totalPaginas":1,"ultimaPagina":true,"transacoes":[
+			{"idTransacao":"v1","dataEntrada":"2026-11-10","tipoTransacao":"PIX","tipoOperacao":"C","valor":"2500.50","descricao":"PIX RECEBIDO","detalhes":{"nomePagador":"JC"}},
+			{"idTransacao":"v2","dataInclusao":"2026-11-11T09:00:00","tipoTransacao":"BOLETO_COBRANCA","tipoOperacao":"C","valor":"4.500,00","titulo":"Boleto"},
+			{"idTransacao":"v3","dataTransacao":"2026-11-12","tipoTransacao":"PIX","tipoOperacao":"X","valor":1,"descricao":"sentido estranho"}]}`))
+	})
+	srv := httptest.NewTLSServer(mux)
+	defer srv.Close()
+	pool := x509.NewCertPool()
+	pool.AddCert(srv.Certificate())
+	mtlsRootCAsTeste = pool
+	defer func() { mtlsRootCAsTeste = nil }()
+	interTokenCache.Range(func(k, _ any) bool { interTokenCache.Delete(k); return true })
+
+	certPEM, keyPEM := parCertInter(t, time.Now().Add(time.Hour))
+	cfg := ProviderConfig{ClientID: "x", ClientSecret: "y", CertPEM: certPEM, KeyPEM: keyPEM, BaseURL: srv.URL}
+	txs, err := (&InterProvider{}).GetExtrato(cfg, "2026-11-01", "2026-11-14")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(txs) != 2 || txs[0].Valor != 2500.5 || txs[0].DataTransacao != "2026-11-10" || txs[1].Valor != 4500 || txs[1].DataTransacao != "2026-11-11" {
+		t.Fatalf("conversão tolerante falhou: %+v", txs)
+	}
+	if !strings.Contains(txs[0].Detalhes, "nomePagador") {
+		t.Fatalf("detalhes brutos devem acompanhar o lançamento: %q", txs[0].Detalhes)
+	}
+
+	a, err := AmostrarExtratoInter(cfg, "2026-11-01", "2026-11-14")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if a.Modo != "completo" || a.TotalBruto != 3 || a.Convertidos != 2 || a.Descartados != 1 || len(a.Amostra) != 3 || len(a.Motivos) != 1 || !strings.Contains(a.Motivos[0], "sentido desconhecido") || a.Tipos["PIX/C"] != 1 || a.Tipos["PIX/X"] != 1 {
+		t.Fatalf("amostra inesperada: %+v", a)
+	}
+}
+
+func TestInterNum_Formatos(t *testing.T) {
+	for in, want := range map[string]float64{`2500.5`: 2500.5, `"2500.50"`: 2500.5, `"4.500,00"`: 4500, `"4500,5"`: 4500.5, `"-120.5"`: -120.5, `null`: 0, `""`: 0} {
+		var n interNum
+		if err := n.UnmarshalJSON([]byte(in)); err != nil || float64(n) != want {
+			t.Errorf("%s → %v (%v), esperado %v", in, float64(n), err, want)
+		}
+	}
+	var n interNum
+	if n.UnmarshalJSON([]byte(`"abc"`)) == nil {
+		t.Error("texto não numérico deveria falhar")
+	}
+}

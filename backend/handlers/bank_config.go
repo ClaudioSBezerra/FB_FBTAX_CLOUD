@@ -475,3 +475,30 @@ func BancosProvidersHandler(db *sql.DB) http.HandlerFunc {
 		json.NewEncoder(w).Encode(services.ProvidersDisponiveis())
 	}
 }
+
+// BancosExtratoAmostraHandler mostra o que o Inter devolve para um período (diagnóstico, somente
+// leitura, não grava) — GET /api/financeiro/bancos/extrato-amostra?conta_id=&data_inicio=&data_fim=.
+func BancosExtratoAmostraHandler(db *sql.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if r.Method != http.MethodGet {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		q := r.URL.Query()
+		prov, cfg, existe, err := carregarConfigBanco(db, q.Get("conta_id"))
+		if err != nil || !existe || prov != "inter" {
+			w.WriteHeader(http.StatusUnprocessableEntity)
+			json.NewEncoder(w).Encode(map[string]string{"erro": "Conta sem credenciais do Inter configuradas."})
+			return
+		}
+		a, err := services.AmostrarExtratoInter(cfg, q.Get("data_inicio"), q.Get("data_fim"))
+		if err != nil {
+			log.Printf("[Bancos] amostra do extrato: %v", err)
+			w.WriteHeader(http.StatusFailedDependency) // 424: o Cloudflare mascara 502/504
+			json.NewEncoder(w).Encode(map[string]string{"erro": err.Error()})
+			return
+		}
+		json.NewEncoder(w).Encode(a)
+	}
+}

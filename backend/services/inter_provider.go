@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -201,21 +202,50 @@ func interBankingGET(cfg ProviderConfig, caminho, query string) ([]byte, string,
 // interExtratoPorPagina é o tamanho de página do extrato enriquecido (o Inter aceita até 10.000).
 const interExtratoPorPagina = 1000
 
-// interTransacaoBruta são os campos usados de cada lançamento; o JSON completo é guardado à parte.
-type interTransacaoBruta struct {
-	DataTransacao string  `json:"dataTransacao"`
-	DataInclusao  string  `json:"dataInclusao"`
-	TipoTransacao string  `json:"tipoTransacao"` // PIX, BOLETO_COBRANCA, TRANSFERENCIA, PAGAMENTO, ...
-	TipoOperacao  string  `json:"tipoOperacao"`  // C (entrada) | D (saída)
-	Valor         float64 `json:"valor"`
-	Titulo        string  `json:"titulo"`
-	Descricao     string  `json:"descricao"`
-	IDTransacao   string  `json:"idTransacao"`
+// interNum lê um valor que o Inter pode enviar como número (2500.5) ou como texto ("2500.50").
+type interNum float64
+
+func (n *interNum) UnmarshalJSON(b []byte) error {
+	t := strings.Trim(strings.TrimSpace(string(b)), `"`)
+	if t == "" || t == "null" {
+		*n = 0
+		return nil
+	}
+	// Formato brasileiro ("4.500,00"): o ponto é milhar e a vírgula é decimal. Só vírgula ("4500,5")
+	// também é decimal; só ponto ("4500.50") já está no formato do Go.
+	if strings.Contains(t, ",") {
+		t = strings.ReplaceAll(t, ".", "")
+		t = strings.ReplaceAll(t, ",", ".")
+	}
+	f, err := strconv.ParseFloat(t, 64)
+	if err != nil {
+		return fmt.Errorf("valor inválido %q", t)
+	}
+	*n = interNum(f)
+	return nil
 }
 
-// GetExtrato busca o extrato ENRIQUECIDO (/extrato/completo, paginado) e guarda o JSON de cada
-// lançamento em Detalhes. Se o Inter não o oferecer para a integração, cai para o extrato simples.
-func (p *InterProvider) GetExtrato(cfg ProviderConfig, dataInicio, dataFim string) ([]BankTransacao, error) {
+// interTransacaoBruta são os campos usados de cada lançamento; o JSON completo é guardado à parte.
+type interTransacaoBruta struct {
+	DataTransacao string   `json:"dataTransacao"`
+	DataInclusao  string   `json:"dataInclusao"`
+	DataEntrada   string   `json:"dataEntrada"`
+	TipoTransacao string   `json:"tipoTransacao"` // PIX, BOLETO_COBRANCA, TRANSFERENCIA, PAGAMENTO, ...
+	TipoOperacao  string   `json:"tipoOperacao"`  // C (entrada) | D (saída)
+	Valor         interNum `json:"valor"`
+	Titulo        string   `json:"titulo"`
+	Descricao     string   `json:"descricao"`
+	IDTransacao   string   `json:"idTransacao"`
+}
+
+// InterExtratoBruto é o extrato como o Inter devolveu, antes de qualquer interpretação.
+type InterExtratoBruto struct {
+	Modo   string            // "completo" (enriquecido) ou "simples"
+	Brutos []json.RawMessage // um JSON por lançamento
+}
+
+// ExtratoBruto busca o extrato (enriquecido, com recuo para o simples) sem interpretar os lançamentos.
+func (p *InterProvider) ExtratoBruto(cfg ProviderConfig, dataInicio, dataFim string) (*InterExtratoBruto, error) {
 	var brutos []json.RawMessage
 	completo := true
 	for pagina := 0; pagina < 50; pagina++ {
@@ -254,42 +284,77 @@ func (p *InterProvider) GetExtrato(cfg ProviderConfig, dataInicio, dataFim strin
 		}
 		brutos = ex.Transacoes
 	}
+	modo := "simples"
+	if completo {
+		modo = "completo"
+	}
+	return &InterExtratoBruto{Modo: modo, Brutos: brutos}, nil
+}
 
-	txs := make([]BankTransacao, 0, len(brutos))
-	for _, bruto := range brutos {
-		var t interTransacaoBruta
-		if json.Unmarshal(bruto, &t) != nil {
+// interConverter transforma um lançamento bruto em BankTransacao. ok=false quando o sentido
+// (crédito/débito) não pôde ser determinado; motivo explica o descarte.
+func interConverter(bruto json.RawMessage, completo bool) (tx BankTransacao, ok bool, motivo string) {
+	var t interTransacaoBruta
+	if err := json.Unmarshal(bruto, &t); err != nil {
+		return tx, false, "formato ilegível: " + err.Error()
+	}
+	tipo, categoria := interSentido(t.TipoOperacao, t.TipoTransacao)
+	if tipo == "" {
+		return tx, false, fmt.Sprintf("sentido desconhecido (tipoOperacao=%q tipoTransacao=%q)", t.TipoOperacao, t.TipoTransacao)
+	}
+	data := strings.TrimSpace(t.DataTransacao)
+	if data == "" {
+		data = strings.TrimSpace(t.DataInclusao)
+	}
+	if data == "" {
+		data = strings.TrimSpace(t.DataEntrada)
+	}
+	if len(data) > 10 {
+		data = data[:10]
+	}
+	desc := strings.TrimSpace(t.Descricao)
+	if desc == "" {
+		desc = strings.TrimSpace(t.Titulo)
+	}
+	valor := float64(t.Valor)
+	if valor < 0 {
+		valor = -valor
+	}
+	id := strings.TrimSpace(t.IDTransacao)
+	if id == "" { // sem id do banco: identificador estável para não duplicar a cada sincronização
+		soma := sha256.Sum256([]byte(fmt.Sprintf("%s|%s|%.2f|%s|%s", data, tipo, valor, desc, categoria)))
+		id = "h-" + hex.EncodeToString(soma[:8])
+	}
+	det := ""
+	if completo {
+		det = string(bruto)
+	}
+	return BankTransacao{IDExterno: id, DataTransacao: data, Descricao: desc, Valor: valor, Tipo: tipo, Categoria: categoria, Detalhes: det}, true, ""
+}
+
+// GetExtrato busca o extrato ENRIQUECIDO (/extrato/completo, paginado) e guarda o JSON de cada
+// lançamento em Detalhes. Se o Inter não o oferecer para a integração, cai para o extrato simples.
+// Lançamentos que não puderam ser interpretados são contados e registrados no log (nunca em silêncio).
+func (p *InterProvider) GetExtrato(cfg ProviderConfig, dataInicio, dataFim string) ([]BankTransacao, error) {
+	ex, err := p.ExtratoBruto(cfg, dataInicio, dataFim)
+	if err != nil {
+		return nil, err
+	}
+	txs := make([]BankTransacao, 0, len(ex.Brutos))
+	descartados := 0
+	for _, bruto := range ex.Brutos {
+		tx, ok, motivo := interConverter(bruto, ex.Modo == "completo")
+		if !ok {
+			descartados++
+			if descartados <= 3 {
+				log.Printf("[Inter] lançamento descartado: %s | %s", motivo, limitarTexto(string(bruto), 300))
+			}
 			continue
 		}
-		tipo, categoria := interSentido(t.TipoOperacao, t.TipoTransacao)
-		if tipo == "" {
-			continue // sentido desconhecido: não arrisca lançar crédito/débito errado
-		}
-		data := strings.TrimSpace(t.DataTransacao)
-		if data == "" {
-			data = strings.TrimSpace(t.DataInclusao)
-		}
-		if len(data) > 10 {
-			data = data[:10]
-		}
-		desc := strings.TrimSpace(t.Descricao)
-		if desc == "" {
-			desc = strings.TrimSpace(t.Titulo)
-		}
-		valor := t.Valor
-		if valor < 0 {
-			valor = -valor
-		}
-		id := strings.TrimSpace(t.IDTransacao)
-		if id == "" { // sem id do banco: identificador estável para não duplicar a cada sincronização
-			soma := sha256.Sum256([]byte(fmt.Sprintf("%s|%s|%.2f|%s|%s", data, tipo, valor, desc, categoria)))
-			id = "h-" + hex.EncodeToString(soma[:8])
-		}
-		det := ""
-		if completo {
-			det = string(bruto)
-		}
-		txs = append(txs, BankTransacao{IDExterno: id, DataTransacao: data, Descricao: desc, Valor: valor, Tipo: tipo, Categoria: categoria, Detalhes: det})
+		txs = append(txs, tx)
+	}
+	if descartados > 0 {
+		log.Printf("[Inter] extrato %s a %s (%s): %d de %d lançamentos descartados", dataInicio, dataFim, ex.Modo, descartados, len(ex.Brutos))
 	}
 	return txs, nil
 }

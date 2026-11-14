@@ -174,3 +174,46 @@ func limitarTexto(s string, n int) string {
 	}
 	return s
 }
+
+// InterAmostra descreve o que o Inter devolveu para um período, sem gravar nada: serve para
+// entender o formato real dos lançamentos e por que algum seria descartado.
+type InterAmostra struct {
+	Modo        string         `json:"modo"` // completo (enriquecido) ou simples
+	TotalBruto  int            `json:"total_bruto"`
+	Convertidos int            `json:"convertidos"`
+	Descartados int            `json:"descartados"`
+	Motivos     []string       `json:"motivos,omitempty"`
+	Tipos       map[string]int `json:"tipos"`             // "PIX/C" → quantidade
+	Amostra     []string       `json:"amostra,omitempty"` // até 3 lançamentos como vieram
+}
+
+// AmostrarExtratoInter consulta o período e resume o resultado. Somente leitura.
+func AmostrarExtratoInter(cfg ProviderConfig, dataInicio, dataFim string) (*InterAmostra, error) {
+	if err := ValidarPeriodoExtrato(dataInicio, dataFim); err != nil {
+		return nil, err
+	}
+	ex, err := (&InterProvider{}).ExtratoBruto(cfg, dataInicio, dataFim)
+	if err != nil {
+		return nil, err
+	}
+	a := &InterAmostra{Modo: ex.Modo, TotalBruto: len(ex.Brutos), Tipos: map[string]int{}}
+	vistos := map[string]bool{}
+	for i, bruto := range ex.Brutos {
+		if i < 3 {
+			a.Amostra = append(a.Amostra, limitarTexto(string(bruto), 1500))
+		}
+		var t interTransacaoBruta
+		_ = json.Unmarshal(bruto, &t)
+		a.Tipos[strings.TrimSpace(t.TipoTransacao)+"/"+strings.TrimSpace(t.TipoOperacao)]++
+		if _, ok, motivo := interConverter(bruto, ex.Modo == "completo"); ok {
+			a.Convertidos++
+		} else {
+			a.Descartados++
+			if !vistos[motivo] && len(a.Motivos) < 5 {
+				vistos[motivo] = true
+				a.Motivos = append(a.Motivos, motivo)
+			}
+		}
+	}
+	return a, nil
+}

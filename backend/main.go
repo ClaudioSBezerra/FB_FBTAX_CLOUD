@@ -387,6 +387,7 @@ func main() {
 	http.HandleFunc("/api/financeiro/bancos/status",           withAuth(handlers.BancosStatusHandler, "admin"))
 	http.HandleFunc("/api/financeiro/bancos/config",      withAuth(handlers.BancosConfigHandler, "admin"))
 	http.HandleFunc("/api/financeiro/bancos/sync-log",    withAuth(handlers.BancosSyncLogHandler, "admin"))
+	http.HandleFunc("/api/financeiro/bancos/extrato-amostra", withAuth(handlers.BancosExtratoAmostraHandler, "admin"))
 	http.HandleFunc("/api/financeiro/bancos/saldo",       withAuth(handlers.BancosSaldoHandler, "admin"))
 	http.HandleFunc("/api/financeiro/bancos/testar",      withAuth(handlers.BancosTestarHandler, "admin"))
 	http.HandleFunc("/api/financeiro/bancos/sync",        withAuth(handlers.BancosSyncHandler, "admin"))
