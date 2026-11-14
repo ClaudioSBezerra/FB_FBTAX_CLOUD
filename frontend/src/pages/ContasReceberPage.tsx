@@ -263,7 +263,7 @@ export default function ContasReceberPage() {
                     <td className="text-right whitespace-nowrap">{brl(t.valor)}</td>
                     <td className="text-xs">
                       {t.status === 'aberto' && (t.dias_atraso > 0 ? <Badge variant="destructive">vencido há {t.dias_atraso} dia(s)</Badge> : <Badge variant="secondary">a vencer</Badge>)}
-                      {t.status === 'pago' && <><Badge>pago {dia(t.pago_em)}</Badge><div className="text-gray-500">{t.baixa_origem === 'automatica' ? 'conciliado automaticamente' : 'baixa manual'}{t.baixa_obs && ` · ${t.baixa_obs}`}</div></>}
+                      {t.status === 'pago' && <><Badge className="bg-emerald-600 hover:bg-emerald-600 text-white">pago {dia(t.pago_em)}</Badge><div className="text-gray-500">{t.baixa_origem === 'automatica' ? 'conciliado automaticamente' : 'baixa manual'}{t.baixa_obs && ` · ${t.baixa_obs}`}</div></>}
                       {t.status === 'cancelado' && <><Badge variant="secondary">cancelado</Badge>{t.baixa_obs && <div className="text-gray-500">{t.baixa_obs}</div>}</>}
                     </td>
                     <td className="whitespace-nowrap space-x-1">
