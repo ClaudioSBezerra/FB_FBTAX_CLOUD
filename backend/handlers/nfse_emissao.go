@@ -325,6 +325,7 @@ type nfseEmitirReq struct {
 	ConfirmarProducao string `json:"confirmar_producao,omitempty"`
 	TipoTitulo        string `json:"tipo_titulo,omitempty"` // mensalidade (padrão), adesao, projeto, outro
 	Vencimento        string `json:"vencimento,omitempty"`  // AAAA-MM-DD; vazio = dia 10 (services.VencimentoPadrao)
+	GerarTitulo       *bool  `json:"gerar_titulo,omitempty"` // ausente = gera; false = só a nota
 }
 
 // NFSeEmitirHandler trata POST /api/financeiro/nfse/emitir.
@@ -521,7 +522,7 @@ func NFSeEmitirHandler(db *sql.DB) http.HandlerFunc {
 			"n_nfse": numeroNFSe(resp.NFSeXML), "tipo_ambiente": resp.TipoAmbiente}
 		// Título no Contas a Receber (só produção: nota de homologação não cobra ninguém). Uma falha
 		// aqui não desfaz a nota, que já é válida na Sefin: a tela avisa e o título se cadastra à mão.
-		if emp.Ambiente == 1 {
+		if emp.Ambiente == 1 && (req.GerarTitulo == nil || *req.GerarTitulo) {
 			tid, criado, err := services.GerarTituloDaNFSe(ctx, db, id, tipoTitulo, vencimento)
 			if err != nil {
 				log.Printf("[NFSe] nota %s autorizada, mas o título não foi criado: %v", id, err)

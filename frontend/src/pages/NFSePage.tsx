@@ -86,6 +86,7 @@ export default function NFSePage() {
   const [competencia, setCompetencia] = useState('')
   const [tipoTitulo, setTipoTitulo] = useState('mensalidade')
   const [vencimento, setVencimento] = useState('')
+  const [gerarTitulo, setGerarTitulo] = useState(true)
   const [previa, setPrevia] = useState<string | null>(null)
   const [confirmacao, setConfirmacao] = useState('')
   const [ocupado, setOcupado] = useState(false)
@@ -164,7 +165,7 @@ export default function NFSePage() {
     try {
       const res = await fetch('/api/financeiro/nfse/emitir', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ cliente_id: clienteId, valor_centavos: centavos, descricao, competencia: competencia || undefined, tipo_titulo: tipoTitulo, vencimento: vencimento || undefined, enviar, confirmar_producao: enviar && producao ? FRASE_PRODUCAO : undefined }),
+        body: JSON.stringify({ cliente_id: clienteId, valor_centavos: centavos, descricao, competencia: competencia || undefined, tipo_titulo: tipoTitulo, vencimento: vencimento || undefined, gerar_titulo: gerarTitulo, enviar, confirmar_producao: enviar && producao ? FRASE_PRODUCAO : undefined }),
       })
       if (!res.ok) return toast.error(await lerErro(res))
       const j = await res.json()
@@ -280,14 +281,18 @@ export default function NFSePage() {
               <div><Label>Competência (opcional)</Label><Input type="date" value={competencia} onChange={e => setCompetencia(e.target.value)} /></div>
               <div>
                 <Label>Tipo do título</Label>
-                <select className="w-full border rounded h-10 px-2 bg-white" value={tipoTitulo} onChange={e => setTipoTitulo(e.target.value)}>
+                <select disabled={!gerarTitulo} className="w-full border rounded h-10 px-2 bg-white" value={tipoTitulo} onChange={e => setTipoTitulo(e.target.value)}>
                   <option value="mensalidade">Mensalidade</option>
                   <option value="adesao">Adesão / setup</option>
                   <option value="projeto">Projeto</option>
                   <option value="outro">Outro</option>
                 </select>
               </div>
-              <div><Label>Vencimento (padrão: dia 10)</Label><Input type="date" value={vencimento} onChange={e => setVencimento(e.target.value)} /></div>
+              <div><Label>Vencimento (padrão: dia 10)</Label><Input type="date" value={vencimento} disabled={!gerarTitulo} onChange={e => setVencimento(e.target.value)} /></div>
+              <label className="col-span-3 flex items-center gap-2 text-sm">
+                <input type="checkbox" checked={gerarTitulo} onChange={e => setGerarTitulo(e.target.checked)} />
+                Gerar o título no Contas a Receber ao emitir a nota
+              </label>
             </div>
             {cliente && !cliente.cod_ibge && (
               <Alert><AlertDescription>
