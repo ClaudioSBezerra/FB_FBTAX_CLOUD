@@ -355,3 +355,94 @@ func TestDespesasLerIA(t *testing.T) {
 		t.Errorf("falha externa: %d", rr.Code)
 	}
 }
+
+func TestExclusoes_DespesasComprovantesNotasTitulos(t *testing.T) {
+	db := nfseTestDB(t)
+	suf := fmt.Sprintf("%d", time.Now().UnixNano())
+	var cli string
+	if err := db.QueryRow(`INSERT INTO financeiro.clientes (razao_social, cnpj) VALUES ('EXCLUSAO TESTE', $1) RETURNING id`, suf[len(suf)-14:]).Scan(&cli); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		db.Exec(`UPDATE financeiro.notas_debito SET titulo_id=NULL WHERE cliente_id=$1`, cli)
+		db.Exec(`DELETE FROM financeiro.titulos_receber WHERE cliente_id=$1`, cli)
+		db.Exec(`DELETE FROM financeiro.despesas_viagem WHERE cliente_id=$1`, cli)
+		db.Exec(`DELETE FROM financeiro.notas_debito WHERE cliente_id=$1`, cli)
+		db.Exec(`DELETE FROM financeiro.despesas_comprovantes WHERE nome LIKE 'teste-excl-%'`)
+		db.Exec(`DELETE FROM financeiro.clientes WHERE id=$1`, cli)
+	})
+	desp, comp, notas, tit := DespesasHandler(db), DespesasComprovantesHandler(db), NotasDebitoHandler(db), TitulosHandler(db)
+	novoComp := func(nome string) string {
+		var id string
+		if err := db.QueryRow(`INSERT INTO financeiro.despesas_comprovantes (nome, content_type, dados) VALUES ($1,'application/pdf','%PDF') RETURNING id`, nome).Scan(&id); err != nil {
+			t.Fatal(err)
+		}
+		return id
+	}
+	novaDesp := func(compID any) string {
+		var id string
+		if err := db.QueryRow(`INSERT INTO financeiro.despesas_viagem (cliente_id, data, tipo_despesa, descricao, valor, comprovante_id, status)
+			VALUES ($1,'2026-11-10','OUTRAS','x',10,$2,'aprovada') RETURNING id`, cli, compID).Scan(&id); err != nil {
+			t.Fatal(err)
+		}
+		return id
+	}
+	c1, c2 := novoComp("teste-excl-1.pdf"), novoComp("teste-excl-2.pdf")
+	d1, d2, d3 := novaDesp(c1), novaDesp(c2), novaDesp(nil)
+
+	// nota emitida com d2: o comprovante c2 e a despesa d2 ficam protegidos
+	var nota string
+	if err := db.QueryRow(`INSERT INTO financeiro.notas_debito (cliente_id, codigo, emissao, vencimento, periodo_ini, periodo_fim, total, xlsx)
+		VALUES ($1,$2,'2026-11-14','2026-11-24','2026-11-10','2026-11-10',10,'\x00') RETURNING id`, cli, "TESTE-EXCL-"+suf).Scan(&nota); err != nil {
+		t.Fatal(err)
+	}
+	db.Exec(`UPDATE financeiro.despesas_viagem SET nota_debito_id=$2 WHERE id=$1`, d2, nota)
+
+	b, _ := json.Marshal(map[string]any{"ids": []string{d1, d2, d3}})
+	rr := chamar(desp, http.MethodPost, "/?action=excluir", b, "application/json")
+	var out struct{ Excluidas, Mantidas int }
+	json.Unmarshal(rr.Body.Bytes(), &out)
+	if rr.Code != 200 || out.Excluidas != 2 || out.Mantidas != 1 {
+		t.Fatalf("excluir despesas: %d %s", rr.Code, rr.Body)
+	}
+	if rr := chamar(comp, http.MethodDelete, "/?id="+c2, nil, ""); rr.Code != http.StatusConflict {
+		t.Errorf("comprovante de nota emitida: %d", rr.Code)
+	}
+	if rr := chamar(comp, http.MethodDelete, "/?id="+c1, nil, ""); rr.Code != 200 {
+		t.Errorf("comprovante livre: %d %s", rr.Code, rr.Body)
+	}
+	if rr := chamar(comp, http.MethodDelete, "/?id="+c1, nil, ""); rr.Code != http.StatusNotFound {
+		t.Errorf("comprovante já apagado: %d", rr.Code)
+	}
+
+	// nota só se exclui depois de cancelada
+	nb, _ := json.Marshal(map[string]any{"id": nota})
+	if rr := chamar(notas, http.MethodPost, "/?action=excluir", nb, "application/json"); rr.Code != http.StatusConflict {
+		t.Errorf("nota emitida não se exclui: %d", rr.Code)
+	}
+	db.Exec(`UPDATE financeiro.notas_debito SET status='cancelada' WHERE id=$1`, nota)
+	if rr := chamar(notas, http.MethodPost, "/?action=excluir", nb, "application/json"); rr.Code != 200 {
+		t.Errorf("nota cancelada: %d %s", rr.Code, rr.Body)
+	}
+
+	// título: aberto e pago não se excluem; cancelado sim
+	novoTit := func(status string) string {
+		var id string
+		q := `INSERT INTO financeiro.titulos_receber (cliente_id, tipo, descricao, valor, vencimento, status) VALUES ($1,'reembolso','t',10,'2026-12-10',$2) RETURNING id`
+		if status == "pago" {
+			q = `INSERT INTO financeiro.titulos_receber (cliente_id, tipo, descricao, valor, vencimento, status, pago_em, valor_pago) VALUES ($1,'reembolso','t',10,'2026-12-10',$2,'2026-12-11',10) RETURNING id`
+		}
+		if err := db.QueryRow(q, cli, status).Scan(&id); err != nil {
+			t.Fatal(err)
+		}
+		return id
+	}
+	for _, st := range []string{"aberto", "pago"} {
+		if rr := chamar(tit, http.MethodDelete, "/?id="+novoTit(st), nil, ""); rr.Code != http.StatusConflict {
+			t.Errorf("título %s não pode ser excluído: %d", st, rr.Code)
+		}
+	}
+	if rr := chamar(tit, http.MethodDelete, "/?id="+novoTit("cancelado"), nil, ""); rr.Code != 200 {
+		t.Errorf("título cancelado: %d %s", rr.Code, rr.Body)
+	}
+}

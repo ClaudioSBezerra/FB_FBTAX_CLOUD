@@ -87,13 +87,14 @@ type ModeloIA struct {
 
 // ModelosLeituraRecibos é a lista fechada de modelos que a tela pode escolher.
 var ModelosLeituraRecibos = []ModeloIA{
-	{"claude-haiku-5-5", "Haiku 5.5", "Mais barato e rápido", 0.10, 0.50},
+	{"claude-haiku-5-5", "Haiku 5.5", "Mais barato e rápido (padrão)", 0.10, 0.50},
 	{"claude-sonnet-5-5", "Sonnet 5.5", "Equilíbrio entre custo e precisão", 2.00, 10.00},
-	{"claude-opus-5-5", "Opus 5.5", "Mais preciso (padrão)", 4.00, 20.00},
+	{"claude-opus-5-5", "Opus 5.5", "Mais preciso, ~20x mais caro", 4.00, 20.00},
 }
 
 // ModeloLeituraPadrao é o usado quando a tela não escolhe.
-const ModeloLeituraPadrao = "claude-opus-5-5"
+// Haiku 5.5 empatou com Sonnet e Opus nos testes de 14/11/2026 por ~1/20 do custo.
+const ModeloLeituraPadrao = "claude-haiku-5-5"
 
 // ModeloLeituraValido diz se o id está na lista permitida.
 func ModeloLeituraValido(id string) bool {

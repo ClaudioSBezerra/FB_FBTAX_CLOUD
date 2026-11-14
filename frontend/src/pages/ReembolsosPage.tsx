@@ -239,6 +239,40 @@ export default function ReembolsosPage() {
     carregar()
   }
 
+  const excluirMarcadas = async () => {
+    const ids = selecionadas.filter(d => !d.nota_debito_id).map(d => d.id)
+    if (ids.length === 0) return toast.error('Marque despesas que ainda não estão em nota')
+    if (!window.confirm(`Excluir ${ids.length} despesa(s) de vez? Os comprovantes continuam guardados.`)) return
+    const res = await fetch('/api/financeiro/despesas?action=excluir', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ids }) })
+    if (!res.ok) return toast.error(await erroDe(res))
+    toast.success(`${(await res.json()).excluidas} despesa(s) excluída(s)`)
+    carregar()
+  }
+
+  const excluirComprovantes = async () => {
+    if (!window.confirm(`Excluir ${semDespesa.length} comprovante(s) sem despesa? Os arquivos serão apagados.`)) return
+    setOcupado(true)
+    let ok = 0
+    const falhas: string[] = []
+    try {
+      for (const c of semDespesa) {
+        const res = await fetch(`/api/financeiro/despesas/comprovantes?id=${c.id}`, { method: 'DELETE' })
+        if (res.ok) ok++
+        else falhas.push(`${c.nome}: ${await erroDe(res)}`)
+      }
+    } finally { setOcupado(false) }
+    toast.success(`${ok} comprovante(s) excluído(s)`)
+    falhas.slice(0, 5).forEach(f => toast.warning(f))
+    carregar()
+  }
+
+  const excluirNota = async (n: Nota) => {
+    if (!window.confirm(`Excluir de vez a nota cancelada ${n.codigo}?`)) return
+    const res = await fetch('/api/financeiro/notas-debito?action=excluir', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: n.id }) })
+    if (!res.ok) return toast.error(await erroDe(res))
+    carregar()
+  }
+
   const salvar = async () => {
     if (!clienteId) return toast.error('Escolha o cliente')
     const body = { id: form.id || undefined, cliente_id: clienteId, data: form.data, tipo_despesa: form.tipo_despesa, descricao: form.descricao,
@@ -377,6 +411,7 @@ export default function ReembolsosPage() {
                 <Button size="sm" disabled={ocupado || !clienteId || !iaOk} onClick={async () => { setOcupado(true); try { await lerComIA(semDespesa) } finally { setOcupado(false) } }}>
                   Ler com IA
                 </Button>
+                <Button size="sm" variant="outline" disabled={ocupado} onClick={excluirComprovantes}>Excluir esses comprovantes</Button>
               </div>
             )}
             {progresso && <p className="text-sm text-blue-700">{progresso}</p>}
@@ -470,6 +505,7 @@ export default function ReembolsosPage() {
             <Button size="sm" variant="outline" onClick={() => mudarStatus('aprovada')}>Aprovar</Button>
             <Button size="sm" variant="outline" onClick={() => mudarStatus('descartada')}>Descartar</Button>
             <Button size="sm" variant="outline" onClick={() => mudarStatus('pendente')}>Voltar a pendente</Button>
+            <Button size="sm" variant="outline" onClick={excluirMarcadas}>Excluir marcadas</Button>
           </div>
 
           <div className="overflow-x-auto">
@@ -589,6 +625,7 @@ export default function ReembolsosPage() {
                     <Button size="sm" variant="outline" onClick={() => baixar(`/api/financeiro/notas-debito?action=zip&id=${n.id}`, `${n.codigo}-comprovantes.zip`)}>Comprovantes</Button>{' '}
                     {n.status === 'emitida' && <Button size="sm" variant="outline" onClick={() => abrirEmail(n)}>E-mail</Button>}{' '}
                     {n.status === 'emitida' && n.titulo_status !== 'pago' && <Button size="sm" variant="ghost" onClick={() => cancelarNota(n)}>Cancelar</Button>}
+                    {n.status === 'cancelada' && <Button size="sm" variant="ghost" onClick={() => excluirNota(n)}>Excluir</Button>}
                   </td>
                 </tr>
               ))}

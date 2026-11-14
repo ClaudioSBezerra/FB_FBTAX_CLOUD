@@ -114,10 +114,33 @@ func TitulosHandler(db *sql.DB) http.HandlerFunc {
 			titulosCriar(w, r, db)
 		case r.Method == http.MethodPut:
 			titulosEditar(w, r, db)
+		case r.Method == http.MethodDelete:
+			titulosExcluir(w, r, db)
 		default:
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		}
 	}
+}
+
+// titulosExcluir apaga de vez um título CANCELADO (cancele primeiro). Título aberto ou pago nunca
+// é apagado: o pago tem baixa e, se mensalidade, token renovado.
+func titulosExcluir(w http.ResponseWriter, r *http.Request, db *sql.DB) {
+	id := r.URL.Query().Get("id")
+	if !reUUIDNFS.MatchString(id) {
+		nfseErro(w, http.StatusBadRequest, "id inválido")
+		return
+	}
+	res, err := db.ExecContext(r.Context(), `DELETE FROM financeiro.titulos_receber WHERE id = $1 AND status = 'cancelado'`, id)
+	if err != nil {
+		log.Printf("[Titulos] excluir: %v", err)
+		nfseErro(w, http.StatusInternalServerError, "erro ao excluir")
+		return
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		nfseErro(w, http.StatusConflict, "só é possível excluir título cancelado: cancele-o antes (título pago não se exclui)")
+		return
+	}
+	nfseJSON(w, http.StatusOK, map[string]string{"id": id})
 }
 
 func titulosListar(w http.ResponseWriter, r *http.Request, db *sql.DB) {

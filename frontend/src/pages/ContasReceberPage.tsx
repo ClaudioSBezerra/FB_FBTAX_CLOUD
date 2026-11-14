@@ -136,6 +136,13 @@ export default function ContasReceberPage() {
     toast.success('Título cancelado'); carregar()
   }
 
+  const excluir = async (t: Titulo) => {
+    if (!window.confirm(`Excluir de vez o título cancelado "${t.descricao}"?`)) return
+    const res = await fetch(`/api/financeiro/titulos?id=${t.id}`, { method: 'DELETE' })
+    if (!res.ok) return toast.error(await erroDe(res))
+    toast.success('Título excluído'); carregar()
+  }
+
   const conciliar = async () => {
     setOcupado(true)
     try {
@@ -273,6 +280,7 @@ export default function ContasReceberPage() {
                         <Button size="sm" variant="outline" onClick={() => editar(t)}>Editar</Button>
                         <Button size="sm" variant="outline" onClick={() => cancelar(t)}>Cancelar</Button>
                       </>}
+                      {t.status === 'cancelado' && <Button size="sm" variant="outline" onClick={() => excluir(t)}>Excluir</Button>}
                     </td>
                   </tr>
                 ))}

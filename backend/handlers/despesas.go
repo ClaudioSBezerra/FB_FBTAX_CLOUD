@@ -106,6 +106,8 @@ func DespesasHandler(db *sql.DB) http.HandlerFunc {
 			despesasStatus(w, r, db)
 		case r.Method == http.MethodPost && action == "ler":
 			despesasLerIA(w, r, db)
+		case r.Method == http.MethodPost && action == "excluir":
+			despesasExcluirVarias(w, r, db)
 		case r.Method == http.MethodPost:
 			despesasCriar(w, r, db)
 		case r.Method == http.MethodPut:
@@ -257,6 +259,30 @@ func despesasExcluir(w http.ResponseWriter, r *http.Request, db *sql.DB) {
 		return
 	}
 	nfseJSON(w, http.StatusOK, map[string]string{"id": id})
+}
+
+// despesasExcluirVarias apaga as despesas marcadas que ainda não entraram em nota.
+func despesasExcluirVarias(w http.ResponseWriter, r *http.Request, db *sql.DB) {
+	var req struct {
+		IDs []string `json:"ids"`
+	}
+	if json.NewDecoder(io.LimitReader(r.Body, 256<<10)).Decode(&req) != nil || len(req.IDs) == 0 || len(req.IDs) > 500 {
+		nfseErro(w, http.StatusBadRequest, "requisição inválida")
+		return
+	}
+	for _, id := range req.IDs {
+		if !reUUIDNFS.MatchString(id) {
+			nfseErro(w, http.StatusBadRequest, "id inválido")
+			return
+		}
+	}
+	res, err := db.ExecContext(r.Context(), `DELETE FROM financeiro.despesas_viagem WHERE id = ANY($1::uuid[]) AND nota_debito_id IS NULL`, pq.Array(req.IDs))
+	if err != nil {
+		nfseErro(w, http.StatusInternalServerError, "erro ao excluir")
+		return
+	}
+	n, _ := res.RowsAffected()
+	nfseJSON(w, http.StatusOK, map[string]int64{"excluidas": n, "mantidas": int64(len(req.IDs)) - n})
 }
 
 func despesasStatus(w http.ResponseWriter, r *http.Request, db *sql.DB) {
@@ -497,6 +523,31 @@ func DespesasComprovantesHandler(db *sql.DB) http.HandlerFunc {
 			w.Header().Set("X-Content-Type-Options", "nosniff")
 			w.Header().Set("Content-Disposition", fmt.Sprintf("inline; filename=%q", nome))
 			w.Write(dados)
+		case http.MethodDelete:
+			id := r.URL.Query().Get("id")
+			if !reUUIDNFS.MatchString(id) {
+				nfseErro(w, http.StatusBadRequest, "id inválido")
+				return
+			}
+			// o comprovante de uma despesa que está numa nota emitida fica: o zip da nota depende dele
+			var emNota int
+			db.QueryRowContext(r.Context(), `SELECT COUNT(*) FROM financeiro.despesas_viagem d
+				JOIN financeiro.notas_debito n ON n.id = d.nota_debito_id AND n.status = 'emitida'
+				WHERE d.comprovante_id = $1`, id).Scan(&emNota)
+			if emNota > 0 {
+				nfseErro(w, http.StatusConflict, "este comprovante pertence a uma nota emitida: cancele a nota antes")
+				return
+			}
+			res, err := db.ExecContext(r.Context(), `DELETE FROM financeiro.despesas_comprovantes WHERE id=$1`, id)
+			if err != nil {
+				nfseErro(w, http.StatusInternalServerError, "erro ao excluir o comprovante")
+				return
+			}
+			if n, _ := res.RowsAffected(); n == 0 {
+				nfseErro(w, http.StatusNotFound, "comprovante não encontrado")
+				return
+			}
+			nfseJSON(w, http.StatusOK, map[string]string{"id": id})
 		default:
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		}
@@ -530,6 +581,8 @@ func NotasDebitoHandler(db *sql.DB) http.HandlerFunc {
 			notaDebitoListar(w, r, db)
 		case r.Method == http.MethodPost && action == "cancelar":
 			notaDebitoCancelar(w, r, db)
+		case r.Method == http.MethodPost && action == "excluir":
+			notaDebitoExcluir(w, r, db)
 		case r.Method == http.MethodPost:
 			notaDebitoCriar(w, r, db)
 		default:
@@ -987,6 +1040,27 @@ func notaDebitoEnviar(w http.ResponseWriter, r *http.Request, db *sql.DB) {
 	}
 	db.ExecContext(r.Context(), `UPDATE financeiro.notas_debito SET enviada_em=NOW(), enviada_para=$2 WHERE id=$1`, req.ID, strings.Join(append(append([]string{}, para...), cc...), ", "))
 	nfseJSON(w, http.StatusOK, map[string]any{"enviada": true, "remetente": responderPara, "para": para, "cc": cc, "anexos": len(anexos)})
+}
+
+// notaDebitoExcluir apaga uma nota CANCELADA (libera o código FOR.FIN.0002-MMAAAA para uma nova).
+func notaDebitoExcluir(w http.ResponseWriter, r *http.Request, db *sql.DB) {
+	var req struct {
+		ID string `json:"id"`
+	}
+	if json.NewDecoder(io.LimitReader(r.Body, 8<<10)).Decode(&req) != nil || !reUUIDNFS.MatchString(req.ID) {
+		nfseErro(w, http.StatusBadRequest, "requisição inválida")
+		return
+	}
+	res, err := db.ExecContext(r.Context(), `DELETE FROM financeiro.notas_debito WHERE id = $1 AND status = 'cancelada'`, req.ID)
+	if err != nil {
+		nfseErro(w, http.StatusInternalServerError, "erro ao excluir a nota")
+		return
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		nfseErro(w, http.StatusConflict, "só é possível excluir nota cancelada: cancele-a antes")
+		return
+	}
+	nfseJSON(w, http.StatusOK, map[string]string{"id": req.ID})
 }
 
 func notaDebitoCancelar(w http.ResponseWriter, r *http.Request, db *sql.DB) {

@@ -79,6 +79,9 @@ func TestLerReciboIA_Recusas(t *testing.T) {
 }
 
 func TestModeloLeituraValido(t *testing.T) {
+	if ModeloLeituraPadrao != "claude-haiku-5-5" || !ModeloLeituraValido(ModeloLeituraPadrao) {
+		t.Errorf("padrão: %s", ModeloLeituraPadrao)
+	}
 	for _, id := range []string{"claude-haiku-5-5", "claude-sonnet-5-5", "claude-opus-5-5"} {
 		if !ModeloLeituraValido(id) {
 			t.Errorf("%s deveria ser permitido", id)
