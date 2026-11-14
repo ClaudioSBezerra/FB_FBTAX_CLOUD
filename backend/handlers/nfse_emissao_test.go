@@ -12,6 +12,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"encoding/pem"
+	"fmt"
 	"math/big"
 	"mime/multipart"
 	"net/http"
@@ -437,5 +438,119 @@ func TestTransacoes_DevolveDetalhesDoExtratoEnriquecido(t *testing.T) {
 		if o.Descricao == "Sem detalhe" && o.Detalhes != nil {
 			t.Errorf("lançamento sem detalhes deveria vir sem o campo: %v", o.Detalhes)
 		}
+	}
+}
+
+func TestReceber_APIDeTitulos(t *testing.T) {
+	db := nfseTestDB(t)
+	suf := fmt.Sprintf("%d", time.Now().UnixNano())
+	var cli, contrato, prod, plano, conta string
+	must := func(dest *string, q string, args ...any) {
+		if err := db.QueryRow(q, args...).Scan(dest); err != nil {
+			t.Fatalf("%s: %v", q, err)
+		}
+	}
+	must(&cli, `INSERT INTO financeiro.clientes (razao_social, cnpj) VALUES ('CLIENTE API', '06314327000121') RETURNING id`)
+	must(&contrato, `INSERT INTO financeiro.contratos (cliente_id, data_inicio, valor_total) VALUES ($1, CURRENT_DATE, 100) RETURNING id`, cli)
+	must(&prod, `INSERT INTO financeiro.produtos (codigo, nome) VALUES ($1,'P') RETURNING id`, "R"+suf)
+	must(&plano, `INSERT INTO financeiro.planos (produto_id, nome) VALUES ($1,'PL') RETURNING id`, prod)
+	must(&conta, `INSERT INTO financeiro.contas_financeiras (apelido, banco) VALUES ('Receber API','077') RETURNING id`)
+	db.Exec(`INSERT INTO financeiro.tokens (contrato_id, plano_id, token, valid_from, valid_until, status) VALUES ($1,$2,$3, CURRENT_DATE-60, CURRENT_DATE-15,'em_carencia')`, contrato, plano, "t"+suf)
+	t.Cleanup(func() {
+		db.Exec(`DELETE FROM financeiro.titulos_receber WHERE cliente_id=$1`, cli)
+		db.Exec(`DELETE FROM financeiro.tokens WHERE contrato_id=$1`, contrato)
+		db.Exec(`DELETE FROM financeiro.contratos WHERE id=$1`, contrato)
+		db.Exec(`DELETE FROM financeiro.clientes WHERE id=$1`, cli)
+		db.Exec(`DELETE FROM financeiro.planos WHERE id=$1`, plano)
+		db.Exec(`DELETE FROM financeiro.produtos WHERE id=$1`, prod)
+		db.Exec(`DELETE FROM financeiro.transacoes WHERE conta_id=$1`, conta)
+		db.Exec(`DELETE FROM financeiro.contas_financeiras WHERE id=$1`, conta)
+	})
+
+	h := TitulosHandler(db)
+	post := func(q, corpo string) *httptest.ResponseRecorder {
+		return chamar(h, http.MethodPost, "/?"+q, []byte(corpo), "application/json")
+	}
+	venc := time.Now().AddDate(0, 0, 9).Format("2006-01-02")
+	comp := time.Now().Format("2006-01-02")
+
+	// validações
+	for nome, corpo := range map[string]string{
+		"sem valor":                   fmt.Sprintf(`{"cliente_id":"%s","tipo":"adesao","descricao":"x","valor":0,"vencimento":"%s"}`, cli, venc),
+		"sem vencimento":              fmt.Sprintf(`{"cliente_id":"%s","tipo":"adesao","descricao":"x","valor":10}`, cli),
+		"mensalidade sem contrato":    fmt.Sprintf(`{"cliente_id":"%s","tipo":"mensalidade","competencia":"%s","descricao":"x","valor":10,"vencimento":"%s"}`, cli, comp, venc),
+		"mensalidade sem competência": fmt.Sprintf(`{"cliente_id":"%s","contrato_id":"%s","tipo":"mensalidade","descricao":"x","valor":10,"vencimento":"%s"}`, cli, contrato, venc),
+		"tipo inválido":               fmt.Sprintf(`{"cliente_id":"%s","tipo":"multa","descricao":"x","valor":10,"vencimento":"%s"}`, cli, venc),
+	} {
+		if rr := post("", corpo); rr.Code != http.StatusBadRequest {
+			t.Errorf("%s: esperava 400, veio %d %s", nome, rr.Code, rr.Body)
+		}
+	}
+
+	mens := fmt.Sprintf(`{"cliente_id":"%s","contrato_id":"%s","tipo":"mensalidade","competencia":"%s","descricao":"Mensalidade SmartPick e Farol","valor":4500,"vencimento":"%s"}`, cli, contrato, comp, venc)
+	rr := post("", mens)
+	var criado struct {
+		ID string `json:"id"`
+	}
+	if rr.Code != http.StatusCreated || json.Unmarshal(rr.Body.Bytes(), &criado) != nil || criado.ID == "" {
+		t.Fatalf("criar mensalidade: %d %s", rr.Code, rr.Body)
+	}
+	if rr := post("", mens); rr.Code != http.StatusConflict {
+		t.Fatalf("mensalidade duplicada deveria dar 409: %d %s", rr.Code, rr.Body)
+	}
+	adesao := post("", fmt.Sprintf(`{"cliente_id":"%s","tipo":"adesao","descricao":"Taxa de adesão","valor":3000,"vencimento":"%s"}`, cli, venc))
+	var adesaoID struct {
+		ID string `json:"id"`
+	}
+	json.Unmarshal(adesao.Body.Bytes(), &adesaoID)
+
+	// lista
+	rr = chamar(h, http.MethodGet, "/?cliente_id="+cli, nil, "")
+	var lista []map[string]any
+	if json.Unmarshal(rr.Body.Bytes(), &lista) != nil || len(lista) != 2 {
+		t.Fatalf("lista: %d %s", rr.Code, rr.Body)
+	}
+
+	// candidatos + vincular: crédito com valor igual aparece primeiro; baixa renova o token.
+	var tx string
+	must(&tx, `INSERT INTO financeiro.transacoes (conta_id, data_transacao, descricao, valor, tipo, categoria, referencia_ext)
+		VALUES ($1, CURRENT_DATE, 'TED sem detalhe', 4500, 'credito', 'TRANSFERENCIA', $2) RETURNING id`, conta, "api-"+suf)
+	rr = chamar(h, http.MethodGet, "/?action=candidatos&id="+criado.ID, nil, "")
+	var cands []map[string]any
+	if json.Unmarshal(rr.Body.Bytes(), &cands) != nil || len(cands) == 0 || cands[0]["transacao_id"] != tx || cands[0]["valor_igual"] != true {
+		t.Fatalf("candidatos: %d %s", rr.Code, rr.Body)
+	}
+	rr = post("action=vincular", fmt.Sprintf(`{"id":"%s","transacao_id":"%s"}`, criado.ID, tx))
+	if rr.Code != 200 || !strings.Contains(rr.Body.String(), `"tokens_renovados":1`) {
+		t.Fatalf("vincular: %d %s", rr.Code, rr.Body)
+	}
+	if rr := post("action=vincular", fmt.Sprintf(`{"id":"%s","transacao_id":"%s"}`, adesaoID.ID, tx)); rr.Code != http.StatusConflict {
+		t.Fatalf("o mesmo lançamento não baixa dois títulos: %d %s", rr.Code, rr.Body)
+	}
+	var ativos int
+	db.QueryRow(`SELECT COUNT(*) FROM financeiro.tokens WHERE contrato_id=$1 AND status='ativo'`, contrato).Scan(&ativos)
+	if ativos != 1 {
+		t.Errorf("a mensalidade paga deveria ter ativado o token (ativos=%d)", ativos)
+	}
+
+	// baixa manual da adesão (não renova token), edição bloqueada depois de paga, cancelamento só em aberto.
+	rr = post("action=baixar", fmt.Sprintf(`{"id":"%s","data":"%s","valor":3000,"obs":"recebido em dinheiro"}`, adesaoID.ID, comp))
+	if rr.Code != 200 || !strings.Contains(rr.Body.String(), `"tokens_renovados":0`) {
+		t.Fatalf("baixa manual: %d %s", rr.Code, rr.Body)
+	}
+	put := chamar(h, http.MethodPut, "/", []byte(fmt.Sprintf(`{"id":"%s","cliente_id":"%s","tipo":"adesao","descricao":"x","valor":1,"vencimento":"%s"}`, adesaoID.ID, cli, venc)), "application/json")
+	if put.Code != http.StatusConflict {
+		t.Fatalf("editar título pago deveria dar 409: %d", put.Code)
+	}
+	if rr := post("action=cancelar", fmt.Sprintf(`{"id":"%s"}`, adesaoID.ID)); rr.Code != http.StatusConflict {
+		t.Fatalf("cancelar título pago deveria dar 409: %d", rr.Code)
+	}
+	novo := post("", fmt.Sprintf(`{"cliente_id":"%s","tipo":"projeto","descricao":"Projeto X","valor":10,"vencimento":"%s"}`, cli, venc))
+	var novoID struct {
+		ID string `json:"id"`
+	}
+	json.Unmarshal(novo.Body.Bytes(), &novoID)
+	if rr := post("action=cancelar", fmt.Sprintf(`{"id":"%s","obs":"cliente desistiu"}`, novoID.ID)); rr.Code != 200 {
+		t.Fatalf("cancelar: %d %s", rr.Code, rr.Body)
 	}
 }

@@ -6,6 +6,7 @@ import PortalPage from './pages/PortalPage'
 import EmpresaPage from './pages/EmpresaPage'
 import NFSePage from './pages/NFSePage'
 import BancosPage from './pages/BancosPage'
+import ContasReceberPage from './pages/ContasReceberPage'
 import BancosSincronizacaoPage from './pages/BancosSincronizacaoPage'
 import ClientesPage from './pages/ClientesPage'
 import ProdutosPage from './pages/ProdutosPage'
@@ -81,6 +82,9 @@ function App() {
             } />
             <Route path="/admin/financeiro/empresa" element={
               <FinanceiroRoute><EmpresaPage /></FinanceiroRoute>
+            } />
+            <Route path="/admin/financeiro/receber" element={
+              <FinanceiroRoute><ContasReceberPage /></FinanceiroRoute>
             } />
             <Route path="/admin/financeiro/bancos/sincronizacao" element={
               <FinanceiroRoute><BancosSincronizacaoPage /></FinanceiroRoute>

@@ -1,6 +1,7 @@
 package services
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"fmt"
@@ -223,6 +224,11 @@ func StartBankDailySync(db *sql.DB) {
 					WHERE id = $6`,
 					result.Importadas, result.Duplicadas, result.SaldoFinal, result.DataInicio, result.DataFim, logID)
 				log.Printf("[bank-cron] %s: %d importadas, %d duplicadas", j.id, result.Importadas, result.Duplicadas)
+				if n, err := ConciliarTitulos(context.Background(), db); err != nil {
+					log.Printf("[Titulos] conciliação após o cron: %v", err)
+				} else if n > 0 {
+					log.Printf("[Titulos] %d título(s) baixado(s) automaticamente", n)
+				}
 			}
 		}
 	}()

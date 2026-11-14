@@ -366,6 +366,12 @@ func BancosSyncHandler(db *sql.DB) http.HandlerFunc {
 				    data_inicio = $4::date, data_fim = $5::date
 				WHERE id = $6`,
 				result.Importadas, result.Duplicadas, result.SaldoFinal, result.DataInicio, result.DataFim, logID)
+			// Novos créditos podem ter pago títulos em aberto.
+			if n, err := services.ConciliarTitulos(context.Background(), db); err != nil {
+				log.Printf("[Titulos] conciliação após sincronização: %v", err)
+			} else if n > 0 {
+				log.Printf("[Titulos] %d título(s) baixado(s) automaticamente após a sincronização", n)
+			}
 		}()
 
 		json.NewEncoder(w).Encode(map[string]string{
