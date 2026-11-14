@@ -508,3 +508,25 @@ func BancosExtratoAmostraHandler(db *sql.DB) http.HandlerFunc {
 		json.NewEncoder(w).Encode(a)
 	}
 }
+
+// CredenciaisVencimentosHandler lista o vencimento das credenciais (certificado do Inter e A1 da
+// NFS-e) — GET /api/financeiro/credenciais/vencimentos. A tela mostra faixa de alerta a partir de 30 dias.
+func CredenciaisVencimentosHandler(db *sql.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if r.Method != http.MethodGet {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		creds, err := services.ListarVencimentosCredenciais(r.Context(), db, time.Now())
+		if err != nil {
+			log.Printf("[Credenciais] listar: %v", err)
+			http.Error(w, "erro ao consultar credenciais", http.StatusInternalServerError)
+			return
+		}
+		if creds == nil {
+			creds = []services.CredencialVencimento{}
+		}
+		json.NewEncoder(w).Encode(creds)
+	}
+}

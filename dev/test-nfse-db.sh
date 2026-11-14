@@ -10,11 +10,11 @@ DB="nfse_test_$$"
 psql -q "${BASE}/postgres?sslmode=disable" -c "CREATE DATABASE ${DB}"
 trap 'psql -q "${BASE}/postgres?sslmode=disable" -c "DROP DATABASE IF EXISTS ${DB}" >/dev/null' EXIT
 
-for f in 110 111 112 113 114 115 116 117 118 119 120 125 126 127 128; do
+for f in 110 111 112 113 114 115 116 117 118 119 120 125 126 127 128 129; do
   psql -q -v ON_ERROR_STOP=1 "${BASE}/${DB}?sslmode=disable" \
     -c 'CREATE SCHEMA IF NOT EXISTS financeiro; CREATE EXTENSION IF NOT EXISTS pg_trgm;' \
     -f backend/migrations/${f}_*.sql
 done
 
 cd backend
-TEST_DATABASE_URL="${BASE}/${DB}?sslmode=disable" go test ./services/ ./handlers/ -run "NFSe|Bancos|Inter|Periodo|Transacoes|ProximoHorario|Titulo|Receber" -count=1 -race -v
+TEST_DATABASE_URL="${BASE}/${DB}?sslmode=disable" go test -p 1 ./services/ ./handlers/ -run "NFSe|Bancos|Inter|Periodo|Transacoes|ProximoHorario|Titulo|Receber|Credencia|Alerta" -count=1 -race -v

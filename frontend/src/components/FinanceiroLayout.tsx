@@ -1,5 +1,6 @@
 import { NavLink, useNavigate } from 'react-router-dom'
 import { useAuth } from '@/contexts/AuthContext'
+import AlertaCredenciais from './AlertaCredenciais'
 
 const navItems = [
   { label: 'Dashboard', path: '/admin/financeiro' },
@@ -73,6 +74,7 @@ export default function FinanceiroLayout({ children }: { children: React.ReactNo
 
       {/* Conteúdo principal */}
       <main className="flex-1 overflow-auto">
+        <AlertaCredenciais />
         {children}
       </main>
     </div>

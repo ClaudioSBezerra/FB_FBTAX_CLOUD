@@ -258,6 +258,7 @@ func onDBConnected() {
 
 	handlers.StartTokenStatusUpdater(database)
 	services.StartBankDailySync(database)
+	services.StartCredentialExpiryChecker(database)
 }
 
 func main() {
@@ -389,6 +390,7 @@ func main() {
 	http.HandleFunc("/api/financeiro/bancos/sync-log",    withAuth(handlers.BancosSyncLogHandler, "admin"))
 	http.HandleFunc("/api/financeiro/bancos/extrato-amostra", withAuth(handlers.BancosExtratoAmostraHandler, "admin"))
 	http.HandleFunc("/api/financeiro/bancos/saldo",       withAuth(handlers.BancosSaldoHandler, "admin"))
+	http.HandleFunc("/api/financeiro/credenciais/vencimentos", withAuth(handlers.CredenciaisVencimentosHandler, "admin"))
 	http.HandleFunc("/api/financeiro/bancos/testar",      withAuth(handlers.BancosTestarHandler, "admin"))
 	http.HandleFunc("/api/financeiro/bancos/sync",        withAuth(handlers.BancosSyncHandler, "admin"))
 	http.HandleFunc("/api/financeiro/bancos/providers",   withAuth(handlers.BancosProvidersHandler, "admin"))
