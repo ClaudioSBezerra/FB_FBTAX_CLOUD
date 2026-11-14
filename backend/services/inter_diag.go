@@ -130,6 +130,16 @@ func DiagnosticarInter(cfg ProviderConfig) *InterDiagnostico {
 		return d
 	}
 
+	temExtrato := false
+	for _, r := range d.Escopos {
+		if r.Escopo == "extrato.read" && r.Concedido {
+			temExtrato = true
+		}
+	}
+	if !temExtrato {
+		d.Avisos = append(d.Avisos, "esta integração não tem o escopo extrato.read: saldo e extrato não ficam disponíveis por ela (cobrança e baixa por consulta de cobranças continuam funcionando se tiver boleto-cobranca)")
+		return d
+	}
 	if strings.TrimSpace(cfg.ContaCorrente) == "" {
 		d.Avisos = append(d.Avisos, "informe a conta corrente (cabeçalho x-conta-corrente) para testar o saldo")
 		return d
