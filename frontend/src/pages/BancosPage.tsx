@@ -95,7 +95,9 @@ export default function BancosPage() {
     const contasBase: Conta[] = await a.json()
     const status: { id: string; configurado: boolean }[] = b.ok ? await b.json() : []
     const cfg = new Map(status.map(s => [s.id, s.configurado]))
-    setContas(contasBase.map(c => ({ ...c, configurado: cfg.get(c.id) ?? false })))
+    const lista = contasBase.map(c => ({ ...c, configurado: cfg.get(c.id) ?? false }))
+    setContas(lista)
+    setContaId(atual => atual || (lista.length === 1 ? lista[0].id : ''))
   }, [])
 
   const salvarConta = async () => {
@@ -186,7 +188,7 @@ export default function BancosPage() {
                     <td>{c.ultima_sync ? new Date(c.ultima_sync).toLocaleString('pt-BR') : '—'}</td>
                     <td className="text-right">{brl(c.saldo)}</td>
                     <td className="whitespace-nowrap space-x-1" onClick={e => e.stopPropagation()}>
-                      <Button size="sm" variant="outline" onClick={() => { setForm({ id: c.id, apelido: c.apelido, banco: c.banco, agencia: c.agencia || '', conta: c.conta || '', tipo: c.tipo || 'corrente', provedor: c.provedor || '' }); setEditando(true) }}>Editar</Button>
+                      <Button size="sm" variant="outline" onClick={() => { setContaId(c.id); setForm({ id: c.id, apelido: c.apelido, banco: c.banco, agencia: c.agencia || '', conta: c.conta || '', tipo: c.tipo || 'corrente', provedor: c.provedor || '' }); setEditando(true) }}>Editar</Button>
                       <Button size="sm" variant="outline" onClick={() => desativarConta(c)}>Desativar</Button>
                     </td>
                   </tr>
@@ -219,6 +221,7 @@ export default function BancosPage() {
                 {editando && <Button variant="outline" onClick={() => { setForm(contaVazia); setEditando(false) }}>Cancelar</Button>}
               </div>
             </div>
+            {!contaId && contas.length > 0 && <Alert><AlertDescription>Clique numa conta da lista para abrir <b>Credenciais</b> e <b>Testar conexão</b>.</AlertDescription></Alert>}
             <p className="text-xs text-gray-500">Clique numa conta para configurar as credenciais da API e testar a integração. Para ver o extrato e sincronizar, use <b>Bancos › Sincronização</b>.</p>
           </CardContent>
         </Card>
