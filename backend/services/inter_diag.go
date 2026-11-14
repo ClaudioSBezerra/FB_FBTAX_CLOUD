@@ -12,7 +12,6 @@ import (
 	"errors"
 	"fmt"
 	"strings"
-	"sync"
 	"time"
 )
 
@@ -21,7 +20,9 @@ type InterEscopoTestado struct {
 	Escopo    string `json:"escopo"`
 	Concedido bool   `json:"concedido"`
 	Perigoso  bool   `json:"perigoso,omitempty"` // permite movimentar dinheiro
-	Detalhe   string `json:"detalhe,omitempty"`
+	// Indeterminado: o Inter recusou por excesso de requisições (429); não é falta de permissão.
+	Indeterminado bool   `json:"indeterminado,omitempty"`
+	Detalhe       string `json:"detalhe,omitempty"`
 }
 
 // InterDiagnostico reúne o que o teste de conexão descobriu.
@@ -81,29 +82,47 @@ func DiagnosticarInter(cfg ProviderConfig) *InterDiagnostico {
 		d.Avisos = append(d.Avisos, fmt.Sprintf("certificado vence em %d dias: a renovação já está disponível no Internet Banking", d.CertDiasRestantes))
 	}
 
-	// Um token por escopo, em paralelo (cada chamada tem até 30 s): o resultado mantém a ordem.
-	d.Escopos = make([]InterEscopoTestado, len(interEscoposSonda))
-	var wg sync.WaitGroup
+	// 1) Uma única chamada com todos os escopos: a documentação do Inter diz que a resposta traz os
+	//    escopos concedidos. 2) Se o Inter recusar o conjunto (escopo desconhecido/não permitido),
+	//    cai para um token por escopo, em série e com intervalo (o endpoint responde 429 a rajadas).
+	todos := make([]string, len(interEscoposSonda))
 	for i, e := range interEscoposSonda {
-		wg.Add(1)
-		go func(i int, nome string, perigoso bool) {
-			defer wg.Done()
-			r := InterEscopoTestado{Escopo: nome, Perigoso: perigoso}
-			if _, err := interObterToken(cfg, nome); err != nil {
-				r.Detalhe = limitarTexto(err.Error(), 160)
-			} else {
+		todos[i] = e.Nome
+	}
+	d.Escopos = make([]InterEscopoTestado, len(interEscoposSonda))
+	_, concedidos, errConj := interObterTokenEscopos(cfg, strings.Join(todos, " "))
+	if errConj == nil && strings.TrimSpace(concedidos) != "" {
+		set := map[string]bool{}
+		for _, c := range strings.Fields(concedidos) {
+			set[c] = true
+		}
+		for i, e := range interEscoposSonda {
+			d.Escopos[i] = InterEscopoTestado{Escopo: e.Nome, Perigoso: e.Perigoso, Concedido: set[e.Nome]}
+		}
+	} else {
+		for i, e := range interEscoposSonda {
+			r := InterEscopoTestado{Escopo: e.Nome, Perigoso: e.Perigoso}
+			if _, err := interObterToken(cfg, e.Nome); err == nil {
 				r.Concedido = true
+			} else if errors.Is(err, ErrInterLimite) {
+				r.Indeterminado = true
+				r.Detalhe = "limite de requisições do Inter; teste de novo em alguns minutos"
+			} else {
+				r.Detalhe = limitarTexto(err.Error(), 160)
 			}
 			d.Escopos[i] = r
-		}(i, e.Nome, e.Perigoso)
+		}
 	}
-	wg.Wait()
 	for _, r := range d.Escopos {
 		if r.Concedido {
 			d.TokenOK = true
 			if r.Perigoso {
 				d.Avisos = append(d.Avisos, "a integração tem o escopo "+r.Escopo+", que permite movimentar dinheiro: recomendo criar outra integração sem esse escopo")
 			}
+		}
+		if r.Indeterminado {
+			d.Avisos = append(d.Avisos, "o Inter limitou as requisições (429) durante o teste: o resultado de alguns escopos é indeterminado; aguarde alguns minutos e teste de novo")
+			break
 		}
 	}
 	if !d.TokenOK {

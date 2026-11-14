@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -20,6 +21,7 @@ const interDefaultBaseURL = "https://cdpj.partners.bancointer.com.br"
 // ── Token cache por clientID ──────────────────────────────────────────────────
 
 type interCachedToken struct {
+	scope       string
 	accessToken string
 	expiresAt   time.Time
 }
@@ -39,63 +41,99 @@ func (p *InterProvider) getToken(cfg ProviderConfig) (string, error) {
 	return interObterToken(cfg, interEscopoBanking(cfg))
 }
 
+// interTokenMu serializa os pedidos de token e impõe um intervalo mínimo entre eles: o endpoint
+// de token do Inter responde 429 a rajadas.
+var (
+	interTokenMu      sync.Mutex
+	interTokenUltimo  time.Time
+	interTokenEspaco  = 1200 * time.Millisecond
+	interTokenTentati = 4
+)
+
+// ErrInterLimite indica que o Inter recusou por excesso de requisições (HTTP 429), e não por
+// falta de permissão.
+var ErrInterLimite = fmt.Errorf("inter: limite de requisições (HTTP 429)")
+
 // interObterToken pede (ou reaproveita do cache) um token OAuth com exatamente os escopos dados.
 func interObterToken(cfg ProviderConfig, escopo string) (string, error) {
+	tok, _, err := interObterTokenEscopos(cfg, escopo)
+	return tok, err
+}
+
+// interObterTokenEscopos devolve o token e os escopos que o Inter diz ter concedido (campo
+// "scope" da resposta; vazio se o Inter não informar).
+func interObterTokenEscopos(cfg ProviderConfig, escopo string) (token, concedidos string, err error) {
 	baseURL := cfg.BaseURL
 	if baseURL == "" {
 		baseURL = interDefaultBaseURL
 	}
-
-	// Verifica cache
 	chaveCache := cfg.ClientID + "|" + escopo
 	if v, ok := interTokenCache.Load(chaveCache); ok {
 		cached := v.(*interCachedToken)
 		if time.Now().Before(cached.expiresAt) {
-			return cached.accessToken, nil
+			return cached.accessToken, cached.scope, nil
 		}
 	}
-
 	client, err := buildMTLSClient(cfg.CertPEM, cfg.KeyPEM)
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
 
-	form := url.Values{}
-	form.Set("grant_type", "client_credentials")
-	form.Set("client_id", cfg.ClientID)
-	form.Set("client_secret", cfg.ClientSecret)
-	form.Set("scope", escopo)
+	for tentativa := 1; ; tentativa++ {
+		interTokenMu.Lock()
+		if espera := interTokenEspaco - time.Since(interTokenUltimo); espera > 0 {
+			time.Sleep(espera)
+		}
+		interTokenUltimo = time.Now()
+		interTokenMu.Unlock()
 
-	req, _ := http.NewRequest("POST", baseURL+"/oauth/v2/token", strings.NewReader(form.Encode()))
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		form := url.Values{}
+		form.Set("grant_type", "client_credentials")
+		form.Set("client_id", cfg.ClientID)
+		form.Set("client_secret", cfg.ClientSecret)
+		form.Set("scope", escopo)
+		req, _ := http.NewRequest("POST", baseURL+"/oauth/v2/token", strings.NewReader(form.Encode()))
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
-	resp, err := client.Do(req)
-	if err != nil {
-		return "", fmt.Errorf("inter token: %w", err)
-	}
-	defer resp.Body.Close()
-	raw, _ := io.ReadAll(resp.Body)
+		resp, err := client.Do(req)
+		if err != nil {
+			return "", "", fmt.Errorf("inter token: %w", err)
+		}
+		raw, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+		resp.Body.Close()
 
-	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
-		return "", fmt.Errorf("inter token HTTP %d: %s", resp.StatusCode, string(raw))
-	}
+		if resp.StatusCode == http.StatusTooManyRequests {
+			if tentativa >= interTokenTentati {
+				return "", "", fmt.Errorf("%w: %s", ErrInterLimite, strings.TrimSpace(string(raw)))
+			}
+			espera := time.Duration(tentativa) * 2 * time.Second
+			if ra, e := strconv.Atoi(resp.Header.Get("Retry-After")); e == nil && ra > 0 && ra <= 30 {
+				espera = time.Duration(ra) * time.Second
+			}
+			time.Sleep(espera)
+			continue
+		}
+		if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
+			return "", "", fmt.Errorf("inter token HTTP %d: %s", resp.StatusCode, strings.TrimSpace(string(raw)))
+		}
 
-	var tok struct {
-		AccessToken string `json:"access_token"`
-		ExpiresIn   int    `json:"expires_in"`
+		var tok struct {
+			AccessToken string `json:"access_token"`
+			ExpiresIn   int    `json:"expires_in"`
+			Scope       string `json:"scope"`
+		}
+		if err := json.Unmarshal(raw, &tok); err != nil {
+			return "", "", fmt.Errorf("inter token parse: %w", err)
+		}
+		if tok.ExpiresIn <= 0 {
+			tok.ExpiresIn = 3600
+		}
+		interTokenCache.Store(chaveCache, &interCachedToken{
+			accessToken: tok.AccessToken, scope: tok.Scope,
+			expiresAt: time.Now().Add(time.Duration(tok.ExpiresIn-60) * time.Second),
+		})
+		return tok.AccessToken, tok.Scope, nil
 	}
-	if err := json.Unmarshal(raw, &tok); err != nil {
-		return "", fmt.Errorf("inter token parse: %w", err)
-	}
-	if tok.ExpiresIn <= 0 {
-		tok.ExpiresIn = 3600
-	}
-
-	interTokenCache.Store(chaveCache, &interCachedToken{
-		accessToken: tok.AccessToken,
-		expiresAt:   time.Now().Add(time.Duration(tok.ExpiresIn-60) * time.Second),
-	})
-	return tok.AccessToken, nil
 }
 
 // ── BankProvider ─────────────────────────────────────────────────────────────

@@ -35,18 +35,33 @@ func parCertInter(t *testing.T, validoAte time.Time) (certPEM, keyPEM string) {
 func TestDiagnosticarInter_DescobreEscoposESaldo(t *testing.T) {
 	concedidos := map[string]bool{"extrato.read": true, "cobv.read": true, "cobv.write": true}
 	mux := http.NewServeMux()
+	var chamadas, limitarAte int
+	estrito := false // true: recusa o conjunto se QUALQUER escopo não for permitido (fluxo de recuo)
 	mux.HandleFunc("/oauth/v2/token", func(w http.ResponseWriter, r *http.Request) {
 		r.ParseForm()
+		chamadas++
+		if chamadas <= limitarAte {
+			w.Header().Set("Retry-After", "1")
+			w.WriteHeader(http.StatusTooManyRequests)
+			return
+		}
 		if r.Form.Get("client_id") != "id-teste" || r.Form.Get("client_secret") != "segredo-teste" {
 			w.WriteHeader(http.StatusUnauthorized)
 			return
 		}
-		if !concedidos[r.Form.Get("scope")] {
+		var ok []string
+		pedidos := strings.Fields(r.Form.Get("scope"))
+		for _, e := range pedidos {
+			if concedidos[e] {
+				ok = append(ok, e)
+			}
+		}
+		if len(ok) == 0 || (estrito && len(ok) != len(pedidos)) {
 			w.WriteHeader(http.StatusBadRequest)
 			w.Write([]byte(`{"error":"invalid_scope"}`))
 			return
 		}
-		w.Write([]byte(`{"access_token":"tok-` + r.Form.Get("scope") + `","expires_in":3600,"scope":"` + r.Form.Get("scope") + `"}`))
+		w.Write([]byte(`{"access_token":"tok-` + ok[0] + `","expires_in":3600,"scope":"` + strings.Join(ok, " ") + `"}`))
 	})
 	mux.HandleFunc("/banking/v2/saldo", func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusNotFound) })
 	mux.HandleFunc("/banking/v3/saldo", func(w http.ResponseWriter, r *http.Request) {
@@ -62,6 +77,9 @@ func TestDiagnosticarInter_DescobreEscoposESaldo(t *testing.T) {
 	pool.AddCert(srv.Certificate())
 	mtlsRootCAsTeste = pool
 	defer func() { mtlsRootCAsTeste = nil }()
+	antes := interTokenEspaco
+	interTokenEspaco = time.Millisecond
+	defer func() { interTokenEspaco = antes }()
 
 	certPEM, keyPEM := parCertInter(t, time.Now().Add(40*24*time.Hour))
 	cfg := ProviderConfig{ClientID: "id-teste", ClientSecret: "segredo-teste", CertPEM: certPEM, KeyPEM: keyPEM, ContaCorrente: "12345678", BaseURL: srv.URL}
@@ -92,6 +110,26 @@ func TestDiagnosticarInter_DescobreEscoposESaldo(t *testing.T) {
 	if d := DiagnosticarInter(cfg); !strings.Contains(strings.Join(d.Avisos, " "), "pagamento-pix.write") {
 		t.Errorf("deveria alertar escopo que movimenta dinheiro: %v", d.Avisos)
 	}
+	// Recuo: servidor que recusa o conjunto inteiro (estrito) → um token por escopo, resultado igual.
+	estrito = true
+	chamadas = 0
+	concedidos["pagamento-pix.write"] = false
+	interTokenCache.Range(func(k, _ any) bool { interTokenCache.Delete(k); return true })
+	d = DiagnosticarInter(cfg)
+	got = map[string]bool{}
+	for _, e := range d.Escopos {
+		got[e.Escopo] = e.Concedido
+	}
+	if !got["extrato.read"] || !got["cobv.write"] || got["pix.write"] || chamadas < len(interEscoposSonda) {
+		t.Errorf("recuo para token por escopo falhou: %v (chamadas=%d)", got, chamadas)
+	}
+	// 429: as primeiras chamadas são limitadas; o cliente espera e tenta de novo, sem marcar falta de permissão.
+	estrito, chamadas, limitarAte = false, 0, 2
+	interTokenCache.Range(func(k, _ any) bool { interTokenCache.Delete(k); return true })
+	if d := DiagnosticarInter(cfg); !d.TokenOK || !d.SaldoOK {
+		t.Errorf("deveria superar o 429 com nova tentativa: %+v", d)
+	}
+	limitarAte = 0
 	cfg.ClientSecret = "errado"
 	interTokenCache.Range(func(k, _ any) bool { interTokenCache.Delete(k); return true })
 	if d := DiagnosticarInter(cfg); d.TokenOK || !strings.Contains(strings.Join(d.Avisos, " "), "MESMA integração") {

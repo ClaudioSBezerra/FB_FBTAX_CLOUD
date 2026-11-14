@@ -31,6 +31,7 @@ interface Escopo {
   escopo: string
   concedido: boolean
   perigoso?: boolean
+  indeterminado?: boolean
   detalhe?: string
 }
 
@@ -127,7 +128,8 @@ export default function BancosPage() {
   }
 
   const concedidos = diag?.escopos.filter(e => e.concedido) ?? []
-  const naoConcedidos = diag?.escopos.filter(e => !e.concedido && !e.perigoso) ?? []
+  const naoConcedidos = diag?.escopos.filter(e => !e.concedido && !e.perigoso && !e.indeterminado) ?? []
+  const indeterminados = diag?.escopos.filter(e => e.indeterminado) ?? []
 
   return (
     <div className="min-h-screen bg-gray-50 p-8">
@@ -203,6 +205,12 @@ export default function BancosPage() {
                     <p className="font-medium">Sem permissão (ou nome desconhecido)</p>
                     <div className="flex flex-wrap gap-1 mt-1">{naoConcedidos.map(e => <Badge key={e.escopo} variant="secondary">{e.escopo}</Badge>)}</div>
                   </div>
+                  {indeterminados.length > 0 && (
+                    <div>
+                      <p className="font-medium">Indeterminado (limite de requisições do Inter — teste de novo em alguns minutos)</p>
+                      <div className="flex flex-wrap gap-1 mt-1">{indeterminados.map(e => <Badge key={e.escopo} variant="outline">{e.escopo}</Badge>)}</div>
+                    </div>
+                  )}
                 </div>
               )}
             </CardContent>
