@@ -1,6 +1,8 @@
 package services
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -153,7 +155,7 @@ func (p *InterProvider) GetSaldo(cfg ProviderConfig) (*BankSaldo, error) {
 	return &BankSaldo{Disponivel: s.Disponivel, Bloqueado: s.Bloqueado}, nil
 }
 
-// interBankingGET chama um endpoint do Banking tentando v2 e, se a rota não existir (404), v3.
+// interBankingGET chama um endpoint do Banking v2 (a v3 não existe para extrato/saldo, conforme a referência do Inter).
 // Devolve o corpo e a versão que respondeu.
 func interBankingGET(cfg ProviderConfig, caminho, query string) ([]byte, string, error) {
 	baseURL := cfg.BaseURL
@@ -169,7 +171,7 @@ func interBankingGET(cfg ProviderConfig, caminho, query string) ([]byte, string,
 		return nil, "", err
 	}
 	var ultimo error
-	for _, versao := range []string{"v2", "v3"} {
+	for _, versao := range []string{"v2"} {
 		u := baseURL + "/banking/" + versao + caminho
 		if query != "" {
 			u += "?" + query
@@ -203,11 +205,13 @@ func (p *InterProvider) GetExtrato(cfg ProviderConfig, dataInicio, dataFim strin
 	var ex struct {
 		Transacoes []struct {
 			DataTransacao string  `json:"dataTransacao"`
-			TipoTransacao string  `json:"tipoTransacao"` // CREDITO | DEBITO
+			DataInclusao  string  `json:"dataInclusao"`
+			TipoTransacao string  `json:"tipoTransacao"` // PIX, BOLETO_COBRANCA, TRANSFERENCIA, PAGAMENTO, ...
+			TipoOperacao  string  `json:"tipoOperacao"`  // C (entrada) | D (saída)
 			Valor         float64 `json:"valor"`
+			Titulo        string  `json:"titulo"`
 			Descricao     string  `json:"descricao"`
 			IDTransacao   string  `json:"idTransacao"`
-			TipoOperacao  string  `json:"tipoOperacao"`
 		} `json:"transacoes"`
 	}
 	if err := json.Unmarshal(raw, &ex); err != nil {
@@ -216,18 +220,53 @@ func (p *InterProvider) GetExtrato(cfg ProviderConfig, dataInicio, dataFim strin
 
 	txs := make([]BankTransacao, 0, len(ex.Transacoes))
 	for _, t := range ex.Transacoes {
-		tipo := strings.ToLower(t.TipoTransacao)
-		if tipo != "credito" && tipo != "debito" {
-			continue
+		tipo, categoria := interSentido(t.TipoOperacao, t.TipoTransacao)
+		if tipo == "" {
+			continue // sentido desconhecido: não arrisca lançar crédito/débito errado
 		}
-		txs = append(txs, BankTransacao{
-			IDExterno:     t.IDTransacao,
-			DataTransacao: t.DataTransacao,
-			Descricao:     t.Descricao,
-			Valor:         t.Valor,
-			Tipo:          tipo,
-			Categoria:     t.TipoOperacao,
-		})
+		data := strings.TrimSpace(t.DataTransacao)
+		if data == "" {
+			data = strings.TrimSpace(t.DataInclusao)
+		}
+		if len(data) > 10 {
+			data = data[:10]
+		}
+		desc := strings.TrimSpace(t.Descricao)
+		if desc == "" {
+			desc = strings.TrimSpace(t.Titulo)
+		}
+		valor := t.Valor
+		if valor < 0 {
+			valor = -valor
+		}
+		id := strings.TrimSpace(t.IDTransacao)
+		if id == "" { // sem id do banco: identificador estável para não duplicar a cada sincronização
+			soma := sha256.Sum256([]byte(fmt.Sprintf("%s|%s|%.2f|%s|%s", data, tipo, valor, desc, categoria)))
+			id = "h-" + hex.EncodeToString(soma[:8])
+		}
+		txs = append(txs, BankTransacao{IDExterno: id, DataTransacao: data, Descricao: desc, Valor: valor, Tipo: tipo, Categoria: categoria})
 	}
 	return txs, nil
+}
+
+// interSentido descobre se o lançamento é crédito ou débito. O Inter informa o sentido em
+// tipoOperacao ("C"/"D"); aceita também CREDITO/DEBITO em qualquer dos dois campos. Devolve a
+// categoria (o outro campo, ex.: PIX).
+func interSentido(operacao, transacao string) (tipo, categoria string) {
+	classifica := func(v string) string {
+		switch strings.ToUpper(strings.TrimSpace(v)) {
+		case "C", "CREDITO", "CRÉDITO", "ENTRADA":
+			return "credito"
+		case "D", "DEBITO", "DÉBITO", "SAIDA", "SAÍDA":
+			return "debito"
+		}
+		return ""
+	}
+	if t := classifica(operacao); t != "" {
+		return t, transacao
+	}
+	if t := classifica(transacao); t != "" {
+		return t, operacao
+	}
+	return "", ""
 }

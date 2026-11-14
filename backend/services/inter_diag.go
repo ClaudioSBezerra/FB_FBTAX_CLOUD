@@ -48,9 +48,11 @@ var interEscoposSonda = []struct {
 	{"cob.read", false}, {"cob.write", false},
 	{"pix.read", false},
 	{"webhook.read", false}, {"webhook.write", false},
+	{"webhook-banking.read", false}, {"webhook-banking.write", false},
 	{"boleto-cobranca.read", false}, {"boleto-cobranca.write", false},
+	{"pagamento-boleto.read", false}, {"pagamento-pix.read", false}, {"pagamento-lote.read", false},
 	{"pix.write", true},
-	{"pagamento-boleto.write", true}, {"pagamento-pix.write", true}, {"pagamento-darf.write", true},
+	{"pagamento-boleto.write", true}, {"pagamento-pix.write", true}, {"pagamento-darf.write", true}, {"pagamento-lote.write", true},
 }
 
 // ValidarParCertificadoInter confere que o .crt e a .key formam um par e devolve o certificado.

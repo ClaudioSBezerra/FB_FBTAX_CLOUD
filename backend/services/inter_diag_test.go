@@ -63,8 +63,7 @@ func TestDiagnosticarInter_DescobreEscoposESaldo(t *testing.T) {
 		}
 		w.Write([]byte(`{"access_token":"tok-` + ok[0] + `","expires_in":3600,"scope":"` + strings.Join(ok, " ") + `"}`))
 	})
-	mux.HandleFunc("/banking/v2/saldo", func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusNotFound) })
-	mux.HandleFunc("/banking/v3/saldo", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/banking/v2/saldo", func(w http.ResponseWriter, r *http.Request) {
 		if r.Header.Get("x-conta-corrente") != "12345678" || !strings.HasPrefix(r.Header.Get("Authorization"), "Bearer tok-") {
 			w.WriteHeader(http.StatusForbidden)
 			return
@@ -85,7 +84,7 @@ func TestDiagnosticarInter_DescobreEscoposESaldo(t *testing.T) {
 	cfg := ProviderConfig{ClientID: "id-teste", ClientSecret: "segredo-teste", CertPEM: certPEM, KeyPEM: keyPEM, ContaCorrente: "12345678", BaseURL: srv.URL}
 
 	d := DiagnosticarInter(cfg)
-	if !d.TokenOK || !d.SaldoOK || d.SaldoDisponivel != 1234.56 || d.BankingVersao != "v3" {
+	if !d.TokenOK || !d.SaldoOK || d.SaldoDisponivel != 1234.56 || d.BankingVersao != "v2" {
 		t.Fatalf("diagnóstico inesperado: %+v", d)
 	}
 	got := map[string]bool{}
@@ -148,5 +147,71 @@ func TestValidarParCertificadoInter(t *testing.T) {
 	}
 	if _, err := ValidarParCertificadoInter("lixo", "lixo"); err == nil {
 		t.Fatal("lixo deveria ser recusado")
+	}
+}
+
+func TestInterExtrato_ClassificaCreditoDebitoPeloSentidoEDeduplica(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/oauth/v2/token", func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(`{"access_token":"t","expires_in":3600,"scope":"extrato.read"}`))
+	})
+	mux.HandleFunc("/banking/v2/extrato", func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Query().Get("dataInicio") != "2026-11-01" || r.URL.Query().Get("dataFim") != "2026-11-14" {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		w.Write([]byte(`{"transacoes":[
+			{"idTransacao":"a1","dataTransacao":"2026-11-10","tipoTransacao":"PIX","tipoOperacao":"C","valor":2500.00,"descricao":"PIX RECEBIDO JC DISTRIBUICAO"},
+			{"idTransacao":"a2","dataTransacao":"2026-11-11T10:00:00","tipoTransacao":"BOLETO_COBRANCA","tipoOperacao":"C","valor":4500,"titulo":"Boleto liquidado"},
+			{"idTransacao":"a3","dataTransacao":"2026-11-12","tipoTransacao":"PAGAMENTO","tipoOperacao":"D","valor":-120.5,"descricao":"Pagamento de conta"},
+			{"idTransacao":"a4","dataTransacao":"2026-11-12","tipoTransacao":"CREDITO","tipoOperacao":"","valor":10,"descricao":"formato antigo"},
+			{"dataTransacao":"2026-11-13","tipoTransacao":"PIX","tipoOperacao":"C","valor":99,"descricao":"sem id"},
+			{"idTransacao":"a6","dataTransacao":"2026-11-13","tipoTransacao":"OUTROS","tipoOperacao":"?","valor":5,"descricao":"sentido desconhecido"}
+		]}`))
+	})
+	srv := httptest.NewTLSServer(mux)
+	defer srv.Close()
+	pool := x509.NewCertPool()
+	pool.AddCert(srv.Certificate())
+	mtlsRootCAsTeste = pool
+	defer func() { mtlsRootCAsTeste = nil }()
+	interTokenCache.Range(func(k, _ any) bool { interTokenCache.Delete(k); return true })
+
+	certPEM, keyPEM := parCertInter(t, time.Now().Add(time.Hour))
+	cfg := ProviderConfig{ClientID: "x", ClientSecret: "y", CertPEM: certPEM, KeyPEM: keyPEM, BaseURL: srv.URL}
+	txs, err := (&InterProvider{}).GetExtrato(cfg, "2026-11-01", "2026-11-14")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(txs) != 5 {
+		t.Fatalf("esperava 5 lançamentos (o de sentido desconhecido é ignorado), vieram %d: %+v", len(txs), txs)
+	}
+	esperado := map[string]struct {
+		tipo, cat, data string
+		valor           float64
+	}{
+		"a1": {"credito", "PIX", "2026-11-10", 2500},
+		"a2": {"credito", "BOLETO_COBRANCA", "2026-11-11", 4500},
+		"a3": {"debito", "PAGAMENTO", "2026-11-12", 120.5},
+		"a4": {"credito", "", "2026-11-12", 10},
+	}
+	semID := 0
+	for _, x := range txs {
+		if e, ok := esperado[x.IDExterno]; ok {
+			if x.Tipo != e.tipo || x.Categoria != e.cat || x.DataTransacao != e.data || x.Valor != e.valor {
+				t.Errorf("%s: %+v, esperado %+v", x.IDExterno, x, e)
+			}
+		} else if strings.HasPrefix(x.IDExterno, "h-") {
+			semID++
+		} else {
+			t.Errorf("lançamento inesperado: %+v", x)
+		}
+	}
+	if semID != 1 {
+		t.Errorf("o lançamento sem id deveria ganhar um identificador estável (h-…)")
+	}
+	again, _ := (&InterProvider{}).GetExtrato(cfg, "2026-11-01", "2026-11-14")
+	if len(again) != 5 || again[4].IDExterno != txs[4].IDExterno {
+		t.Errorf("identificador sintético precisa ser estável entre sincronizações")
 	}
 }
