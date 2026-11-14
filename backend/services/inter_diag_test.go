@@ -396,3 +396,57 @@ func TestInterNum_Formatos(t *testing.T) {
 		t.Error("texto não numérico deveria falhar")
 	}
 }
+
+// Extrato simples como na referência do Inter: sem idTransacao e sem dataTransacao; valor em texto;
+// data em dataEntrada; campo cpmf extra. Lançamentos idênticos no mesmo dia não podem se fundir.
+func TestInterExtratoSimples_SemIdNemDataTransacao(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/oauth/v2/token", func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(`{"access_token":"t","expires_in":3600,"scope":"extrato.read"}`))
+	})
+	mux.HandleFunc("/banking/v2/extrato/completo", func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusNotFound) })
+	mux.HandleFunc("/banking/v2/extrato", func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(`{"transacoes":[
+			{"cpmf":"","dataEntrada":"2026-11-10","tipoTransacao":"PIX","tipoOperacao":"C","valor":"100.00","titulo":"Pix recebido","descricao":"PIX RECEBIDO JC"},
+			{"cpmf":"","dataEntrada":"2026-11-10","tipoTransacao":"PIX","tipoOperacao":"C","valor":"100.00","titulo":"Pix recebido","descricao":"PIX RECEBIDO JC"},
+			{"cpmf":"","dataEntrada":"2026-11-10","tipoTransacao":"PIX","tipoOperacao":"C","valor":"100.00","titulo":"Pix recebido","descricao":"PIX RECEBIDO JC"},
+			{"cpmf":"","dataEntrada":"2026-11-11","tipoTransacao":"TARIFA","tipoOperacao":"D","valor":"9.90","titulo":"Tarifa","descricao":"TARIFA PIX"}]}`))
+	})
+	srv := httptest.NewTLSServer(mux)
+	defer srv.Close()
+	pool := x509.NewCertPool()
+	pool.AddCert(srv.Certificate())
+	mtlsRootCAsTeste = pool
+	defer func() { mtlsRootCAsTeste = nil }()
+	interTokenCache.Range(func(k, _ any) bool { interTokenCache.Delete(k); return true })
+
+	certPEM, keyPEM := parCertInter(t, time.Now().Add(time.Hour))
+	cfg := ProviderConfig{ClientID: "x", ClientSecret: "y", CertPEM: certPEM, KeyPEM: keyPEM, BaseURL: srv.URL}
+	txs, err := (&InterProvider{}).GetExtrato(cfg, "2026-11-01", "2026-11-14")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(txs) != 4 {
+		t.Fatalf("esperava 4 lançamentos (3 idênticos + 1 tarifa), vieram %d: %+v", len(txs), txs)
+	}
+	ids := map[string]bool{}
+	for _, x := range txs {
+		ids[x.IDExterno] = true
+		if x.DataTransacao == "" {
+			t.Errorf("data vazia: %+v", x)
+		}
+	}
+	if len(ids) != 4 {
+		t.Fatalf("identificadores precisam ser distintos mesmo para lançamentos idênticos: %v", ids)
+	}
+	if txs[0].Valor != 100 || txs[0].Tipo != "credito" || txs[0].Categoria != "PIX" || txs[3].Tipo != "debito" || txs[3].Categoria != "TARIFA" || txs[3].Valor != 9.9 {
+		t.Fatalf("conversão: %+v", txs)
+	}
+	// Estável entre sincronizações (o dedupe do banco depende disso).
+	outra, _ := (&InterProvider{}).GetExtrato(cfg, "2026-11-01", "2026-11-14")
+	for i := range txs {
+		if txs[i].IDExterno != outra[i].IDExterno {
+			t.Fatalf("id instável na posição %d: %s vs %s", i, txs[i].IDExterno, outra[i].IDExterno)
+		}
+	}
+}

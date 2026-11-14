@@ -342,6 +342,10 @@ func (p *InterProvider) GetExtrato(cfg ProviderConfig, dataInicio, dataFim strin
 	}
 	txs := make([]BankTransacao, 0, len(ex.Brutos))
 	descartados := 0
+	// O extrato simples não traz idTransacao: o identificador é um hash de data, sentido, valor e
+	// descrição. Lançamentos IDÊNTICOS no mesmo dia (dois Pix de R$ 100 iguais) teriam o mesmo hash
+	// e o segundo seria perdido como "já existente"; por isso a n-ésima ocorrência ganha sufixo.
+	ocorrencias := map[string]int{}
 	for _, bruto := range ex.Brutos {
 		tx, ok, motivo := interConverter(bruto, ex.Modo == "completo")
 		if !ok {
@@ -350,6 +354,12 @@ func (p *InterProvider) GetExtrato(cfg ProviderConfig, dataInicio, dataFim strin
 				log.Printf("[Inter] lançamento descartado: %s | %s", motivo, limitarTexto(string(bruto), 300))
 			}
 			continue
+		}
+		if strings.HasPrefix(tx.IDExterno, "h-") {
+			ocorrencias[tx.IDExterno]++
+			if n := ocorrencias[tx.IDExterno]; n > 1 {
+				tx.IDExterno = fmt.Sprintf("%s-%d", tx.IDExterno, n)
+			}
 		}
 		txs = append(txs, tx)
 	}
