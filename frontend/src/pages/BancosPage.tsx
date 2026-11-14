@@ -37,6 +37,7 @@ interface Escopo {
   escopo: string
   concedido: boolean
   perigoso?: boolean
+  atencao?: string
   indeterminado?: boolean
   detalhe?: string
 }
@@ -50,6 +51,7 @@ interface Diag {
   saldo_disponivel?: number
   banking_versao?: string
   avisos?: string[]
+  atencoes?: string[]
 }
 
 async function erroDe(res: Response): Promise<string> {
@@ -272,11 +274,12 @@ export default function BancosPage() {
               {diag && (
                 <div className="space-y-3 text-sm">
                   {(diag.avisos ?? []).map((a, i) => <Alert key={i} variant="destructive"><AlertDescription>{a}</AlertDescription></Alert>)}
+                  {(diag.atencoes ?? []).map((a, i) => <Alert key={`at${i}`}><AlertDescription>{a}</AlertDescription></Alert>)}
                   <p>Token: {diag.token_ok ? '✓ emitido' : '✗ não emitido'} · Saldo: {diag.saldo_ok ? `✓ ${brl(diag.saldo_disponivel ?? 0)} (banking ${diag.banking_versao})` : '✗'} · Certificado: {diag.cert_validade ? `até ${diag.cert_validade} (${diag.cert_dias_restantes} dias)` : '—'}</p>
                   <div>
                     <p className="font-medium">Permissões concedidas ({concedidos.length})</p>
                     <div className="flex flex-wrap gap-1 mt-1">
-                      {concedidos.map(e => <Badge key={e.escopo} variant={e.perigoso ? 'destructive' : 'default'}>{e.escopo}</Badge>)}
+                      {concedidos.map(e => <Badge key={e.escopo} variant={e.perigoso ? 'destructive' : e.atencao ? 'secondary' : 'default'} title={e.atencao}>{e.escopo}{e.atencao ? ' ⚠' : ''}</Badge>)}
                       {concedidos.length === 0 && <span className="text-gray-500">nenhuma</span>}
                     </div>
                   </div>

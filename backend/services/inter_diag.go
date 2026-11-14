@@ -19,7 +19,8 @@ import (
 type InterEscopoTestado struct {
 	Escopo    string `json:"escopo"`
 	Concedido bool   `json:"concedido"`
-	Perigoso  bool   `json:"perigoso,omitempty"` // permite movimentar dinheiro
+	Perigoso  bool   `json:"perigoso,omitempty"` // permite pagar/transferir para terceiros
+	Atencao   string `json:"atencao,omitempty"`  // permissão a conhecer, sem risco de pagamento a terceiros
 	// Indeterminado: o Inter recusou por excesso de requisições (429); não é falta de permissão.
 	Indeterminado bool   `json:"indeterminado,omitempty"`
 	Detalhe       string `json:"detalhe,omitempty"`
@@ -35,6 +36,7 @@ type InterDiagnostico struct {
 	SaldoDisponivel   float64              `json:"saldo_disponivel,omitempty"`
 	BankingVersao     string               `json:"banking_versao,omitempty"`
 	Avisos            []string             `json:"avisos,omitempty"`
+	Atencoes          []string             `json:"atencoes,omitempty"`
 }
 
 // interEscoposSonda são os escopos verificados. Nomes desconhecidos pelo Inter aparecem como
@@ -42,17 +44,20 @@ type InterDiagnostico struct {
 var interEscoposSonda = []struct {
 	Nome     string
 	Perigoso bool
+	Atencao  string
 }{
-	{"extrato.read", false},
-	{"cobv.read", false}, {"cobv.write", false},
-	{"cob.read", false}, {"cob.write", false},
-	{"pix.read", false},
-	{"webhook.read", false}, {"webhook.write", false},
-	{"webhook-banking.read", false}, {"webhook-banking.write", false},
-	{"boleto-cobranca.read", false}, {"boleto-cobranca.write", false},
-	{"pagamento-boleto.read", false}, {"pagamento-pix.read", false}, {"pagamento-lote.read", false},
-	{"pix.write", true},
-	{"pagamento-boleto.write", true}, {"pagamento-pix.write", true}, {"pagamento-darf.write", true}, {"pagamento-lote.write", true},
+	{"extrato.read", false, ""},
+	{"cobv.read", false, ""}, {"cobv.write", false, ""},
+	{"cob.read", false, ""}, {"cob.write", false, ""},
+	{"pix.read", false, ""},
+	{"webhook.read", false, ""}, {"webhook.write", false, ""},
+	{"webhook-banking.read", false, ""}, {"webhook-banking.write", false, ""},
+	{"boleto-cobranca.read", false, ""}, {"boleto-cobranca.write", false, ""},
+	{"pagamento-boleto.read", false, ""}, {"pagamento-pix.read", false, ""}, {"pagamento-lote.read", false, ""},
+	// No padrão do Pix do Banco Central, pix.write é a permissão de DEVOLUÇÃO de um Pix já
+	// recebido ao próprio pagador: não paga terceiros. O sistema não precisa dela.
+	{"pix.write", false, "pix.write permite DEVOLVER ao pagador um Pix já recebido (não paga terceiros). O sistema não precisa dela; se quiser o mínimo de privilégio, recrie a integração sem esse escopo"},
+	{"pagamento-boleto.write", true, ""}, {"pagamento-pix.write", true, ""}, {"pagamento-darf.write", true, ""}, {"pagamento-lote.write", true, ""},
 }
 
 // ValidarParCertificadoInter confere que o .crt e a .key formam um par e devolve o certificado.
@@ -99,11 +104,11 @@ func DiagnosticarInter(cfg ProviderConfig) *InterDiagnostico {
 			set[c] = true
 		}
 		for i, e := range interEscoposSonda {
-			d.Escopos[i] = InterEscopoTestado{Escopo: e.Nome, Perigoso: e.Perigoso, Concedido: set[e.Nome]}
+			d.Escopos[i] = InterEscopoTestado{Escopo: e.Nome, Perigoso: e.Perigoso, Atencao: e.Atencao, Concedido: set[e.Nome]}
 		}
 	} else {
 		for i, e := range interEscoposSonda {
-			r := InterEscopoTestado{Escopo: e.Nome, Perigoso: e.Perigoso}
+			r := InterEscopoTestado{Escopo: e.Nome, Perigoso: e.Perigoso, Atencao: e.Atencao}
 			if _, err := interObterToken(cfg, e.Nome); err == nil {
 				r.Concedido = true
 			} else if errors.Is(err, ErrInterLimite) {
@@ -119,7 +124,10 @@ func DiagnosticarInter(cfg ProviderConfig) *InterDiagnostico {
 		if r.Concedido {
 			d.TokenOK = true
 			if r.Perigoso {
-				d.Avisos = append(d.Avisos, "a integração tem o escopo "+r.Escopo+", que permite movimentar dinheiro: recomendo criar outra integração sem esse escopo")
+				d.Avisos = append(d.Avisos, "a integração tem o escopo "+r.Escopo+", que permite pagar ou transferir dinheiro para terceiros: recomendo criar outra integração sem esse escopo")
+			}
+			if r.Atencao != "" {
+				d.Atencoes = append(d.Atencoes, r.Atencao)
 			}
 		}
 		if r.Indeterminado {

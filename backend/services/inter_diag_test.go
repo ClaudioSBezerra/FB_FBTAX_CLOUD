@@ -107,6 +107,14 @@ func TestDiagnosticarInter_DescobreEscoposESaldo(t *testing.T) {
 		t.Errorf("deveria avisar do vencimento próximo (≤ 90 dias): %v", d.Avisos)
 	}
 
+	// pix.write (devolução de Pix recebido) vira atenção, não alerta de pagamento a terceiros.
+	concedidos["pix.write"] = true
+	interTokenCache.Range(func(k, _ any) bool { interTokenCache.Delete(k); return true })
+	dpx := DiagnosticarInter(cfg)
+	if len(dpx.Atencoes) != 1 || !strings.Contains(dpx.Atencoes[0], "DEVOLVER") || strings.Contains(strings.Join(dpx.Avisos, " "), "pix.write") {
+		t.Errorf("pix.write deveria gerar só atenção: avisos=%v atencoes=%v", dpx.Avisos, dpx.Atencoes)
+	}
+	concedidos["pix.write"] = false
 	// Escopo perigoso concedido gera aviso; credenciais erradas não emitem token.
 	concedidos["pagamento-pix.write"] = true
 	interTokenCache.Range(func(k, _ any) bool { interTokenCache.Delete(k); return true })
