@@ -185,10 +185,8 @@ func handlePostContrato(w http.ResponseWriter, r *http.Request, db *sql.DB) {
 		http.Error(w, "cliente_id, data_inicio, periodicidade and valor_total are required", http.StatusBadRequest)
 		return
 	}
-	if len(req.Itens) == 0 {
-		http.Error(w, "at least one item is required", http.StatusBadRequest)
-		return
-	}
+	// Contrato sem itens é um contrato de SERVIÇO (ex.: processamento de dados): serve à cobrança e à
+	// NFS-e, não tem licença de produto e portanto não gera token.
 
 	tx, err := db.Begin()
 	if err != nil {

@@ -192,7 +192,7 @@ export default function ContratosPage() {
   }
 
   const handleSubmitContrato = async () => {
-    if (itensSelecionados.length === 0 || !dataInicio || !valorTotal) return
+    if (!dataInicio || !valorTotal) return
     const valorTotalNum = parseFloat(valorTotal)
     if (isNaN(valorTotalNum)) { toast.error('Valor total inválido'); return }
     setSubmitting(true)
@@ -538,6 +538,9 @@ export default function ContratosPage() {
               {etapa === 3 && (
                 <div className="space-y-6">
                   <h3 className="font-medium">Produtos, Planos e Valores</h3>
+                  <p className="text-sm text-muted-foreground">
+                    Selecione os planos de produto deste contrato (cada um gera um token de uso). Para um contrato de <b>serviço</b>, sem licença de produto, não selecione nada: ele serve à cobrança e à NFS-e e não gera token.
+                  </p>
 
                   <div className="space-y-3">
                     {produtos.map(produto => (
@@ -632,7 +635,7 @@ export default function ContratosPage() {
                   <div className="flex gap-2">
                     <Button variant="outline" onClick={() => setEtapa(2)}>Voltar</Button>
                     <Button
-                      disabled={itensSelecionados.length === 0 || !dataInicio || !valorTotal || submitting}
+                      disabled={!dataInicio || !valorTotal || submitting}
                       onClick={handleSubmitContrato}
                     >
                       {submitting ? 'Criando...' : 'Criar Contrato'}

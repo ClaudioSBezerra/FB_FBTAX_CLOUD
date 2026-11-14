@@ -554,3 +554,40 @@ func TestReceber_APIDeTitulos(t *testing.T) {
 		t.Fatalf("cancelar: %d %s", rr.Code, rr.Body)
 	}
 }
+
+// Contrato de serviço (sem itens de produto) pode ser cadastrado e não gera token.
+func TestContrato_ServicoSemItensNaoGeraToken(t *testing.T) {
+	db := nfseTestDB(t)
+	var cli string
+	if err := db.QueryRow(`INSERT INTO financeiro.clientes (razao_social, cnpj) VALUES ('FERREIRA TESTE', '10230480001960') ON CONFLICT (cnpj) DO UPDATE SET razao_social = EXCLUDED.razao_social RETURNING id`).Scan(&cli); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		db.Exec(`DELETE FROM financeiro.contratos WHERE cliente_id = $1`, cli)
+		db.Exec(`DELETE FROM financeiro.clientes WHERE id = $1`, cli)
+	})
+	corpo := fmt.Sprintf(`{"cliente_id":"%s","data_inicio":"2026-11-01","periodicidade":"mensal","valor_total":24000,"observacoes":"Processamento de dados","cnpj_ids":[],"itens":[]}`, cli)
+	rr := chamar(ContratosHandler(db), http.MethodPost, "/", []byte(corpo), "application/json")
+	var criado struct {
+		ID string `json:"id"`
+	}
+	if rr.Code != http.StatusCreated || json.Unmarshal(rr.Body.Bytes(), &criado) != nil || criado.ID == "" {
+		t.Fatalf("contrato de serviço: %d %s", rr.Code, rr.Body)
+	}
+	var tokens, itens int
+	db.QueryRow(`SELECT COUNT(*) FROM financeiro.tokens WHERE contrato_id = $1`, criado.ID).Scan(&tokens)
+	db.QueryRow(`SELECT COUNT(*) FROM financeiro.contrato_itens WHERE contrato_id = $1`, criado.ID).Scan(&itens)
+	if tokens != 0 || itens != 0 {
+		t.Errorf("contrato de serviço não deveria ter itens nem tokens: itens=%d tokens=%d", itens, tokens)
+	}
+	// E a mensalidade desse contrato baixada não tenta renovar token.
+	var titulo string
+	if err := db.QueryRow(`INSERT INTO financeiro.titulos_receber (cliente_id, contrato_id, tipo, competencia, descricao, valor, vencimento)
+		VALUES ($1,$2,'mensalidade','2026-11-01','Serviço',24000,'2026-11-06') RETURNING id`, cli, criado.ID).Scan(&titulo); err != nil {
+		t.Fatal(err)
+	}
+	rr = chamar(TitulosHandler(db), http.MethodPost, "/?action=baixar", []byte(fmt.Sprintf(`{"id":"%s","data":"2026-11-06","valor":24000}`, titulo)), "application/json")
+	if rr.Code != 200 || !strings.Contains(rr.Body.String(), `"tokens_renovados":0`) {
+		t.Fatalf("baixa de mensalidade sem token: %d %s", rr.Code, rr.Body)
+	}
+}
