@@ -25,9 +25,8 @@ func TestLerReciboIA_EnviaArquivoELeEstrutura(t *testing.T) {
 	defer srv.Close()
 	t.Setenv("ANTHROPIC_BASE_URL", srv.URL)
 	t.Setenv("ANTHROPIC_API_KEY", "chave-de-teste")
-	t.Setenv("ANTHROPIC_MODEL", "")
 
-	ds, err := LerReciboIA(context.Background(), "Arq1.pdf", "application/pdf", []byte("%PDF-1.4 teste"))
+	ds, uso, err := LerReciboIA(context.Background(), "claude-haiku-5-5", "Arq1.pdf", "application/pdf", []byte("%PDF-1.4 teste"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -37,7 +36,10 @@ func TestLerReciboIA_EnviaArquivoELeEstrutura(t *testing.T) {
 	if chave != "chave-de-teste" {
 		t.Errorf("api key enviada: %q", chave)
 	}
-	if corpo["model"] != "claude-opus-5-5" {
+	if uso.Modelo != "claude-haiku-5-5" || uso.EntradaTok != 10 || uso.SaidaTok != 10 {
+		t.Errorf("uso: %+v", uso)
+	}
+	if corpo["model"] != "claude-haiku-5-5" {
 		t.Errorf("modelo: %v", corpo["model"])
 	}
 	// o arquivo vai como documento base64 e a saída é estruturada com a lista de tipos do modelo
@@ -64,14 +66,29 @@ func mustJSON(v any) []byte { b, _ := json.Marshal(v); return b }
 
 func TestLerReciboIA_Recusas(t *testing.T) {
 	t.Setenv("ANTHROPIC_API_KEY", "")
-	if _, err := LerReciboIA(context.Background(), "a.pdf", "application/pdf", []byte("x")); err != ErrIANaoConfigurada {
+	if _, _, err := LerReciboIA(context.Background(), "", "a.pdf", "application/pdf", []byte("x")); err != ErrIANaoConfigurada {
 		t.Errorf("sem chave: %v", err)
 	}
 	t.Setenv("ANTHROPIC_API_KEY", "k")
-	if _, err := LerReciboIA(context.Background(), "a.png", "image/png", make([]byte, limiteImagemIA+1)); err == nil || !strings.Contains(err.Error(), "5 MB") {
+	if _, _, err := LerReciboIA(context.Background(), "", "a.png", "image/png", make([]byte, limiteImagemIA+1)); err == nil || !strings.Contains(err.Error(), "5 MB") {
 		t.Errorf("imagem grande: %v", err)
 	}
-	if _, err := LerReciboIA(context.Background(), "a.gif", "image/gif", []byte("x")); err == nil {
+	if _, _, err := LerReciboIA(context.Background(), "", "a.gif", "image/gif", []byte("x")); err == nil {
 		t.Error("tipo não suportado deve falhar")
+	}
+}
+
+func TestModeloLeituraValido(t *testing.T) {
+	for _, id := range []string{"claude-haiku-5-5", "claude-sonnet-5-5", "claude-opus-5-5"} {
+		if !ModeloLeituraValido(id) {
+			t.Errorf("%s deveria ser permitido", id)
+		}
+	}
+	if ModeloLeituraValido("gpt-4") || ModeloLeituraValido("") || ModeloLeituraValido("claude-opus-5-5-20260401") {
+		t.Error("só os ids exatos da lista")
+	}
+	t.Setenv("ANTHROPIC_API_KEY", "k")
+	if _, _, err := LerReciboIA(context.Background(), "modelo-invalido", "a.pdf", "application/pdf", []byte("x")); err == nil {
+		t.Error("modelo fora da lista deve ser recusado antes de chamar a API")
 	}
 }

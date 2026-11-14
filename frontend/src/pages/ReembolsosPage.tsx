@@ -17,6 +17,11 @@ interface Nota {
   id: string; cliente: string; codigo: string; emissao: string; vencimento: string; periodo_ini: string; periodo_fim: string
   total: number; status: 'emitida' | 'cancelada'; titulo_status: string; despesas: number; enviada_em: string
 }
+interface ModeloIA { id: string; nome: string; descricao: string; entrada_mtok: number; saida_mtok: number }
+interface LeituraSim {
+  modelo: ModeloIA; ms: number; entrada: number; saida: number; custo: number; total: number
+  despesas: { data: string; tipo_despesa: string; descricao: string; valor: number; obs: string }[]; erro?: string
+}
 interface EmailForm {
   id: string; codigo: string; remetente: string; para: string; cc: string; assunto: string; mensagem: string
   comprovantes: boolean; jaEnviada: string; smtpOk: boolean
@@ -73,6 +78,12 @@ export default function ReembolsosPage() {
   const [semDespesa, setSemDespesa] = useState<{ id: string; nome: string }[]>([])
   const [iaOk, setIaOk] = useState(true)
   const [progresso, setProgresso] = useState('')
+  const [modelos, setModelos] = useState<ModeloIA[]>([])
+  const [modelo, setModelo] = useState(lembrado('reemb.modelo'))
+  const [recentes, setRecentes] = useState<{ id: string; nome: string }[]>([])
+  const [cmpArquivo, setCmpArquivo] = useState('')
+  const [cmpModelos, setCmpModelos] = useState<Set<string>>(new Set())
+  const [cmp, setCmp] = useState<LeituraSim[]>([])
 
   const carregar = useCallback(async () => {
     if (clienteId) {
@@ -83,6 +94,10 @@ export default function ReembolsosPage() {
         setTipos(j.tipos ?? [])
         setSemDespesa(j.comprovantes_sem_despesa ?? [])
         setIaOk(j.ia_configurada !== false)
+        setModelos(j.modelos ?? [])
+        setRecentes(j.comprovantes_recentes ?? [])
+        setModelo(m => m || j.modelo_padrao || '')
+        setCmpModelos(c => (c.size ? c : new Set((j.modelos ?? []).map((x: ModeloIA) => x.id))))
       }
     } else {
       setDespesas([])
@@ -154,7 +169,7 @@ export default function ReembolsosPage() {
       try {
         const res = await fetch('/api/financeiro/despesas?action=ler', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ cliente_id: clienteId, comprovante_id: lista[i].id }),
+          body: JSON.stringify({ cliente_id: clienteId, comprovante_id: lista[i].id, modelo }),
         })
         if (!res.ok) { avisos.push(await erroDe(res)); continue }
         const j = await res.json()
@@ -166,6 +181,27 @@ export default function ReembolsosPage() {
     toast.success(`${total} despesa(s) lida(s) — revise e aprove`)
     avisos.slice(0, 6).forEach(a => toast.warning(a, { duration: 12000 }))
     carregar()
+  }
+
+  const comparar = async () => {
+    if (!clienteId || !cmpArquivo) return toast.error('Escolha o cliente e o comprovante')
+    const escolhidos = modelos.filter(m => cmpModelos.has(m.id))
+    if (escolhidos.length === 0) return toast.error('Marque ao menos um modelo')
+    setOcupado(true)
+    setCmp([])
+    try {
+      for (const m of escolhidos) {
+        setProgresso(`Lendo com ${m.nome}…`)
+        const res = await fetch('/api/financeiro/despesas?action=ler', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ cliente_id: clienteId, comprovante_id: cmpArquivo, modelo: m.id, simular: true }),
+        })
+        if (!res.ok) { setCmp(c => [...c, { modelo: m, ms: 0, entrada: 0, saida: 0, custo: 0, total: 0, despesas: [], erro: await erroDe(res) }]); continue }
+        const j = await res.json()
+        const custo = (j.uso.entrada_tokens * m.entrada_mtok + j.uso.saida_tokens * m.saida_mtok) / 1e6
+        setCmp(c => [...c, { modelo: m, ms: j.uso.duracao_ms, entrada: j.uso.entrada_tokens, saida: j.uso.saida_tokens, custo, total: j.total, despesas: j.despesas ?? [] }])
+      }
+    } finally { setProgresso(''); setOcupado(false) }
   }
 
   const importar = async (file: File | null) => {
@@ -319,6 +355,10 @@ export default function ReembolsosPage() {
         <CardHeader><CardTitle className="text-base">1. Comprovantes e importação</CardTitle></CardHeader>
         <CardContent className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
+            <Label>Modelo de leitura por IA</Label>
+            <select className="w-full border rounded h-10 px-2 bg-white mb-3" value={modelo} onChange={e => { setModelo(e.target.value); lembrar('reemb.modelo', e.target.value) }}>
+              {modelos.map(m => <option key={m.id} value={m.id}>{m.nome} — {m.descricao} (US$ {m.entrada_mtok.toFixed(2)} / {m.saida_mtok.toFixed(2)} por milhão de tokens)</option>)}
+            </select>
             <Label>Enviar comprovantes (PDF, PNG ou JPEG; vários de uma vez)</Label>
             <Input type="file" multiple accept="application/pdf,image/png,image/jpeg,image/webp" disabled={ocupado} onChange={e => { enviarComprovantes(e.target.files); e.target.value = '' }} />
           </div>
@@ -339,6 +379,54 @@ export default function ReembolsosPage() {
             {!iaOk && <p className="text-xs text-red-700">A leitura por IA não está configurada (ANTHROPIC_API_KEY). Use a importação por JSON ou cadastre à mão.</p>}
             <p className="text-xs text-gray-500">Ao enviar os comprovantes com o cliente escolhido, a IA lê cada um e cria as despesas como <b>pendentes</b>, com avisos (itens pessoais, contingência, data ilegível). Os arquivos são enviados à Anthropic para a leitura. Você revisa e aprova abaixo. A importação por JSON continua disponível.</p>
           </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader><CardTitle className="text-base">Comparar modelos de leitura (não grava nada)</CardTitle></CardHeader>
+        <CardContent className="space-y-3">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <div>
+              <Label>Comprovante</Label>
+              <select className="w-full border rounded h-10 px-2 bg-white" value={cmpArquivo} onChange={e => setCmpArquivo(e.target.value)}>
+                <option value="">Selecione…</option>
+                {recentes.map(r => <option key={r.id} value={r.id}>{r.nome}</option>)}
+              </select>
+            </div>
+            <div className="flex flex-wrap items-end gap-4">
+              {modelos.map(m => (
+                <label key={m.id} className="flex items-center gap-1 text-sm">
+                  <input type="checkbox" checked={cmpModelos.has(m.id)} onChange={e => setCmpModelos(c => { const n = new Set(c); if (e.target.checked) n.add(m.id); else n.delete(m.id); return n })} />
+                  {m.nome}
+                </label>
+              ))}
+              <Button variant="outline" disabled={ocupado || !iaOk || !cmpArquivo} onClick={comparar}>Comparar</Button>
+            </div>
+          </div>
+          <p className="text-xs text-gray-500">Lê o mesmo arquivo com cada modelo marcado e mostra tempo, custo estimado e o que cada um entendeu. Nada é gravado. Compare com o cupom na mão: o que importa é acertar valor, data e tipo.</p>
+          {cmp.length > 0 && (
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
+              {cmp.map(c => (
+                <div key={c.modelo.id} className="border rounded p-3 text-sm space-y-2">
+                  <div className="font-semibold">{c.modelo.nome}</div>
+                  {c.erro ? <p className="text-red-700">{c.erro}</p> : <>
+                    <div className="text-xs text-gray-600">{(c.ms / 1000).toFixed(1)} s · {c.entrada + c.saida} tokens · ≈ US$ {c.custo.toFixed(4)}</div>
+                    <div>{c.despesas.length} despesa(s) · soma {brl(c.total)}</div>
+                    <ul className="space-y-1">
+                      {c.despesas.map((d, i) => (
+                        <li key={i} className="border-t pt-1">
+                          {dia(d.data)} · {brl(d.valor)}<br />
+                          <span className="text-xs">{d.tipo_despesa}</span><br />
+                          {d.descricao}
+                          {d.obs && <div className="text-xs text-amber-700">{d.obs}</div>}
+                        </li>
+                      ))}
+                    </ul>
+                  </>}
+                </div>
+              ))}
+            </div>
+          )}
         </CardContent>
       </Card>
 

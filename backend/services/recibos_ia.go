@@ -74,18 +74,57 @@ func esquemaLeituraRecibos() map[string]any {
 	}
 }
 
-// modeloLeituraRecibos: Opus 5.5 por padrão (fotos tortas pedem o modelo mais capaz); ANTHROPIC_MODEL troca.
-func modeloLeituraRecibos() string {
-	if m := strings.TrimSpace(os.Getenv("ANTHROPIC_MODEL")); m != "" {
-		return m
+// ModeloIA descreve um modelo permitido para a leitura. Preços em US$ por milhão de tokens
+// (entrada/saída), só para a estimativa mostrada na tela; Haiku 5.5 cobra mais acima de 100 mil
+// tokens de prompt, o que um comprovante não alcança.
+type ModeloIA struct {
+	ID          string  `json:"id"`
+	Nome        string  `json:"nome"`
+	Descricao   string  `json:"descricao"`
+	EntradaMTok float64 `json:"entrada_mtok"`
+	SaidaMTok   float64 `json:"saida_mtok"`
+}
+
+// ModelosLeituraRecibos é a lista fechada de modelos que a tela pode escolher.
+var ModelosLeituraRecibos = []ModeloIA{
+	{"claude-haiku-5-5", "Haiku 5.5", "Mais barato e rápido", 0.10, 0.50},
+	{"claude-sonnet-5-5", "Sonnet 5.5", "Equilíbrio entre custo e precisão", 2.00, 10.00},
+	{"claude-opus-5-5", "Opus 5.5", "Mais preciso (padrão)", 4.00, 20.00},
+}
+
+// ModeloLeituraPadrao é o usado quando a tela não escolhe.
+const ModeloLeituraPadrao = "claude-opus-5-5"
+
+// ModeloLeituraValido diz se o id está na lista permitida.
+func ModeloLeituraValido(id string) bool {
+	for _, m := range ModelosLeituraRecibos {
+		if m.ID == id {
+			return true
+		}
 	}
-	return "claude-opus-5-5"
+	return false
+}
+
+// UsoIA são os tokens consumidos por uma leitura.
+type UsoIA struct {
+	Modelo       string `json:"modelo"`
+	EntradaTok   int64  `json:"entrada_tokens"`
+	SaidaTok     int64  `json:"saida_tokens"`
+	DuracaoMilli int64  `json:"duracao_ms"`
 }
 
 // LerReciboIA envia um comprovante (PDF, PNG, JPEG ou WebP) à IA e devolve as despesas lidas.
-func LerReciboIA(ctx context.Context, nome, contentType string, dados []byte) ([]DespesaLida, error) {
+func LerReciboIA(ctx context.Context, modelo, nome, contentType string, dados []byte) ([]DespesaLida, UsoIA, error) {
+	uso := UsoIA{Modelo: modelo}
 	if strings.TrimSpace(os.Getenv("ANTHROPIC_API_KEY")) == "" {
-		return nil, ErrIANaoConfigurada
+		return nil, uso, ErrIANaoConfigurada
+	}
+	if modelo == "" {
+		modelo = ModeloLeituraPadrao
+		uso.Modelo = modelo
+	}
+	if !ModeloLeituraValido(modelo) {
+		return nil, uso, fmt.Errorf("modelo %q não permitido", modelo)
 	}
 	b64 := base64.StdEncoding.EncodeToString(dados)
 	var arquivo anthropic.ContentBlockParamUnion
@@ -94,17 +133,18 @@ func LerReciboIA(ctx context.Context, nome, contentType string, dados []byte) ([
 		arquivo = anthropic.NewDocumentBlock(anthropic.Base64PDFSourceParam{Data: b64})
 	case "image/png", "image/jpeg", "image/webp":
 		if len(dados) > limiteImagemIA {
-			return nil, fmt.Errorf("%s: a imagem passa de 5 MB; reduza ou envie como PDF", nome)
+			return nil, uso, fmt.Errorf("%s: a imagem passa de 5 MB; reduza ou envie como PDF", nome)
 		}
 		arquivo = anthropic.NewImageBlockBase64(contentType, b64)
 	default:
-		return nil, fmt.Errorf("%s: tipo de arquivo não suportado", nome)
+		return nil, uso, fmt.Errorf("%s: tipo de arquivo não suportado", nome)
 	}
 	ctx, cancel := context.WithTimeout(ctx, 90*time.Second)
 	defer cancel()
+	inicio := time.Now()
 	cli := anthropic.NewClient() // lê ANTHROPIC_API_KEY (e ANTHROPIC_BASE_URL, usado nos testes)
 	resp, err := cli.Messages.New(ctx, anthropic.MessageNewParams{
-		Model:     anthropic.Model(modeloLeituraRecibos()),
+		Model:     anthropic.Model(modelo),
 		MaxTokens: 8000,
 		System:    []anthropic.TextBlockParam{{Text: promptLeituraRecibos}},
 		Messages: []anthropic.MessageParam{
@@ -116,13 +156,14 @@ func LerReciboIA(ctx context.Context, nome, contentType string, dados []byte) ([
 		},
 	}, option.WithMaxRetries(1))
 	if err != nil {
-		return nil, fmt.Errorf("falha ao consultar a IA: %w", err)
+		return nil, uso, fmt.Errorf("falha ao consultar a IA: %w", err)
 	}
+	uso.EntradaTok, uso.SaidaTok, uso.DuracaoMilli = resp.Usage.InputTokens, resp.Usage.OutputTokens, time.Since(inicio).Milliseconds()
 	if resp.StopReason == anthropic.StopReasonRefusal {
-		return nil, errors.New("a IA recusou ler este arquivo")
+		return nil, uso, errors.New("a IA recusou ler este arquivo")
 	}
 	if resp.StopReason == anthropic.StopReasonMaxTokens {
-		return nil, errors.New("a resposta da IA foi cortada: o arquivo tem cupons demais, divida em partes")
+		return nil, uso, errors.New("a resposta da IA foi cortada: o arquivo tem cupons demais, divida em partes")
 	}
 	var texto strings.Builder
 	for _, b := range resp.Content {
@@ -134,7 +175,7 @@ func LerReciboIA(ctx context.Context, nome, contentType string, dados []byte) ([
 		Despesas []DespesaLida `json:"despesas"`
 	}
 	if err := json.Unmarshal([]byte(texto.String()), &saida); err != nil {
-		return nil, errors.New("a IA devolveu uma resposta que não consegui interpretar")
+		return nil, uso, errors.New("a IA devolveu uma resposta que não consegui interpretar")
 	}
-	return saida.Despesas, nil
+	return saida.Despesas, uso, nil
 }

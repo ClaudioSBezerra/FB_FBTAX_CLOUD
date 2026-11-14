@@ -264,14 +264,16 @@ func TestDespesasLerIA(t *testing.T) {
 	original := lerReciboIA
 	t.Cleanup(func() { lerReciboIA = original })
 	chamadas := 0
-	lerReciboIA = func(ctx context.Context, nome, ct string, dados []byte) ([]services.DespesaLida, error) {
+	modeloUsado := ""
+	lerReciboIA = func(ctx context.Context, modelo, nome, ct string, dados []byte) ([]services.DespesaLida, services.UsoIA, error) {
 		chamadas++
+		modeloUsado = modelo
 		return []services.DespesaLida{
 			{Data: "2026-11-14", TipoDespesa: "ALIMENTAÇÃO - ALMOÇO", Descricao: "Delivery  Com.Pão", Valor: 65.83},
 			{Data: "2026-11-14", TipoDespesa: "OUTRAS", Descricao: "Bembom", Valor: 44.95, Obs: "itens pessoais"},
 			{Data: "", TipoDespesa: "ALIMENTAÇÃO - JANTAR", Descricao: "Aads Refeições", Valor: 44.30, Obs: "data ilegível"},
 			{Data: "2026-11-14", TipoDespesa: "TIPO INVENTADO", Descricao: "x", Valor: 1},
-		}, nil
+		}, services.UsoIA{Modelo: modelo, EntradaTok: 100, SaidaTok: 50}, nil
 	}
 	h := DespesasHandler(db)
 	ler := func(reler bool) *httptest.ResponseRecorder {
@@ -311,15 +313,43 @@ func TestDespesasLerIA(t *testing.T) {
 	if !strings.Contains(obs, "duplicidade") {
 		t.Errorf("duplicidade não sinalizada: %q", obs)
 	}
+	// modelo fora da lista é recusado; simulação não grava nada e devolve o consumo
+	lerCom := func(extra map[string]any) *httptest.ResponseRecorder {
+		corpo := map[string]any{"cliente_id": cli, "comprovante_id": comp}
+		for k, v := range extra {
+			corpo[k] = v
+		}
+		b, _ := json.Marshal(corpo)
+		return chamar(h, http.MethodPost, "/?action=ler", b, "application/json")
+	}
+	if rr := lerCom(map[string]any{"modelo": "gpt-4"}); rr.Code != http.StatusBadRequest {
+		t.Errorf("modelo inválido: %d", rr.Code)
+	}
+	var antes int
+	db.QueryRow(`SELECT COUNT(*) FROM financeiro.despesas_viagem WHERE cliente_id=$1`, cli).Scan(&antes)
+	rs := lerCom(map[string]any{"modelo": "claude-haiku-5-5", "simular": true})
+	var sim struct {
+		Simulacao bool
+		Despesas  []map[string]any
+		Total     float64
+		Uso       struct{ Modelo string }
+	}
+	json.Unmarshal(rs.Body.Bytes(), &sim)
+	var depois int
+	db.QueryRow(`SELECT COUNT(*) FROM financeiro.despesas_viagem WHERE cliente_id=$1`, cli).Scan(&depois)
+	if rs.Code != 200 || !sim.Simulacao || len(sim.Despesas) != 4 || sim.Uso.Modelo != "claude-haiku-5-5" || modeloUsado != "claude-haiku-5-5" || antes != depois {
+		t.Errorf("simulação: %d %+v modelo=%s antes=%d depois=%d", rs.Code, sim, modeloUsado, antes, depois)
+	}
+
 	// IA sem chave vira 409 com mensagem clara; falha externa vira 424 (nunca 502/504)
-	lerReciboIA = func(ctx context.Context, nome, ct string, dados []byte) ([]services.DespesaLida, error) {
-		return nil, services.ErrIANaoConfigurada
+	lerReciboIA = func(ctx context.Context, modelo, nome, ct string, dados []byte) ([]services.DespesaLida, services.UsoIA, error) {
+		return nil, services.UsoIA{}, services.ErrIANaoConfigurada
 	}
 	if rr := ler(true); rr.Code != http.StatusConflict {
 		t.Errorf("sem chave: %d", rr.Code)
 	}
-	lerReciboIA = func(ctx context.Context, nome, ct string, dados []byte) ([]services.DespesaLida, error) {
-		return nil, fmt.Errorf("timeout")
+	lerReciboIA = func(ctx context.Context, modelo, nome, ct string, dados []byte) ([]services.DespesaLida, services.UsoIA, error) {
+		return nil, services.UsoIA{}, fmt.Errorf("timeout")
 	}
 	if rr := ler(true); rr.Code != http.StatusFailedDependency {
 		t.Errorf("falha externa: %d", rr.Code)

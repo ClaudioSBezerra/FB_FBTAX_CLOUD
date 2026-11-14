@@ -174,8 +174,22 @@ func despesasListar(w http.ResponseWriter, r *http.Request, db *sql.DB) {
 		}
 		pr.Close()
 	}
+	recentes := []map[string]string{}
+	rr2, err := db.QueryContext(r.Context(), `SELECT id, nome FROM financeiro.despesas_comprovantes
+		WHERE created_at > NOW() - INTERVAL '60 days' ORDER BY nome`)
+	if err == nil {
+		for rr2.Next() {
+			var id, nome string
+			if rr2.Scan(&id, &nome) == nil {
+				recentes = append(recentes, map[string]string{"id": id, "nome": nome})
+			}
+		}
+		rr2.Close()
+	}
 	nfseJSON(w, http.StatusOK, map[string]any{"despesas": out, "tipos": services.TiposDespesaViagem,
-		"comprovantes_sem_despesa": pend, "ia_configurada": os.Getenv("ANTHROPIC_API_KEY") != ""})
+		"comprovantes_sem_despesa": pend, "comprovantes_recentes": recentes,
+		"modelos": services.ModelosLeituraRecibos, "modelo_padrao": services.ModeloLeituraPadrao,
+		"ia_configurada": os.Getenv("ANTHROPIC_API_KEY") != ""})
 }
 
 func despesasCriar(w http.ResponseWriter, r *http.Request, db *sql.DB) {
@@ -338,6 +352,8 @@ func despesasLerIA(w http.ResponseWriter, r *http.Request, db *sql.DB) {
 		ClienteID     string `json:"cliente_id"`
 		ComprovanteID string `json:"comprovante_id"`
 		Reler         bool   `json:"reler"`
+		Modelo        string `json:"modelo,omitempty"`  // vazio = padrão; só ids da lista permitida
+		Simular       bool   `json:"simular,omitempty"` // só lê e mostra (comparar modelos): não grava nada
 	}
 	if json.NewDecoder(io.LimitReader(r.Body, 8<<10)).Decode(&req) != nil || !reUUIDNFS.MatchString(req.ClienteID) || !reUUIDNFS.MatchString(req.ComprovanteID) {
 		nfseErro(w, http.StatusBadRequest, "informe o cliente e o comprovante")
@@ -351,7 +367,11 @@ func despesasLerIA(w http.ResponseWriter, r *http.Request, db *sql.DB) {
 		nfseErro(w, http.StatusNotFound, "comprovante não encontrado")
 		return
 	}
-	if !req.Reler {
+	if req.Modelo != "" && !services.ModeloLeituraValido(req.Modelo) {
+		nfseErro(w, http.StatusBadRequest, "modelo não permitido")
+		return
+	}
+	if !req.Reler && !req.Simular {
 		var ja int
 		db.QueryRowContext(ctx, `SELECT COUNT(*) FROM financeiro.despesas_viagem WHERE comprovante_id=$1`, req.ComprovanteID).Scan(&ja)
 		if ja > 0 {
@@ -359,7 +379,7 @@ func despesasLerIA(w http.ResponseWriter, r *http.Request, db *sql.DB) {
 			return
 		}
 	}
-	lidas, err := lerReciboIA(ctx, nome, ct, dados)
+	lidas, uso, err := lerReciboIA(ctx, req.Modelo, nome, ct, dados)
 	if err != nil {
 		log.Printf("[Despesas] leitura IA de %s: %v", nome, err)
 		if errors.Is(err, services.ErrIANaoConfigurada) {
@@ -368,6 +388,14 @@ func despesasLerIA(w http.ResponseWriter, r *http.Request, db *sql.DB) {
 		}
 		// 424 e não 502/504: o Cloudflare troca o corpo desses dois e a mensagem some.
 		nfseErro(w, http.StatusFailedDependency, nome+": não consegui ler agora ("+err.Error()+")")
+		return
+	}
+	if req.Simular {
+		var total float64
+		for _, d := range lidas {
+			total += d.Valor
+		}
+		nfseJSON(w, http.StatusOK, map[string]any{"arquivo": nome, "simulacao": true, "despesas": lidas, "total": total, "uso": uso})
 		return
 	}
 	ignoradas := []string{}
@@ -395,7 +423,7 @@ func despesasLerIA(w http.ResponseWriter, r *http.Request, db *sql.DB) {
 		}
 		gravadas++
 	}
-	nfseJSON(w, http.StatusOK, map[string]any{"arquivo": nome, "lidas": gravadas, "ignoradas": ignoradas})
+	nfseJSON(w, http.StatusOK, map[string]any{"arquivo": nome, "lidas": gravadas, "ignoradas": ignoradas, "uso": uso})
 }
 
 func uniq(s []string) []string {
