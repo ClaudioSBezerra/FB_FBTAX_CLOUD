@@ -13,6 +13,8 @@ type SyncResult struct {
 	Importadas int
 	Duplicadas int
 	SaldoFinal float64
+	DataInicio string // período efetivamente consultado (AAAA-MM-DD)
+	DataFim    string
 }
 
 // SyncAccount sincroniza uma conta bancária usando o provider adequado.
@@ -28,7 +30,7 @@ func SyncAccount(db *sql.DB, contaID, provedor, configJSON string) (*SyncResult,
 		return nil, fmt.Errorf("config inválido: %w", err)
 	}
 
-	// Período: da última sync até hoje (mínimo 30 dias)
+	// Período padrão: da última sync até hoje (mínimo 30 dias)
 	dataFim := time.Now().Format("2006-01-02")
 	dataInicio := time.Now().AddDate(0, 0, -30).Format("2006-01-02")
 
@@ -37,13 +39,66 @@ func SyncAccount(db *sql.DB, contaID, provedor, configJSON string) (*SyncResult,
 	if ultimaSync.Valid && ultimaSync.Time.After(time.Now().AddDate(0, 0, -60)) {
 		dataInicio = ultimaSync.Time.AddDate(0, 0, -1).Format("2006-01-02")
 	}
+	return syncAccountPeriodo(db, contaID, provider, cfg, dataInicio, dataFim)
+}
 
+// MaxPeriodoExtratoDias é o período máximo aceito pelo Inter por consulta de extrato.
+const MaxPeriodoExtratoDias = 90
+
+// ValidarPeriodoExtrato confere formato, ordem, que o fim não seja futuro e o limite de 90 dias.
+func ValidarPeriodoExtrato(inicio, fim string) error {
+	i, err1 := time.Parse("2006-01-02", inicio)
+	f, err2 := time.Parse("2006-01-02", fim)
+	if err1 != nil || err2 != nil {
+		return fmt.Errorf("datas devem estar no formato AAAA-MM-DD")
+	}
+	if f.Before(i) {
+		return fmt.Errorf("a data final é anterior à inicial")
+	}
+	if f.After(time.Now().Add(24 * time.Hour)) {
+		return fmt.Errorf("a data final não pode estar no futuro")
+	}
+	if f.Sub(i) > MaxPeriodoExtratoDias*24*time.Hour {
+		return fmt.Errorf("o período máximo é de %d dias", MaxPeriodoExtratoDias)
+	}
+	return nil
+}
+
+// SyncAccountFromDBPeriodo sincroniza um período explícito (validado por ValidarPeriodoExtrato).
+func SyncAccountFromDBPeriodo(db *sql.DB, contaID, dataInicio, dataFim string) (*SyncResult, error) {
+	if err := ValidarPeriodoExtrato(dataInicio, dataFim); err != nil {
+		return nil, err
+	}
+	var provedor string
+	var configEnc sql.NullString
+	if err := db.QueryRow(`SELECT provedor, provedor_config FROM financeiro.contas_financeiras WHERE id = $1 AND ativa = true`, contaID).Scan(&provedor, &configEnc); err != nil {
+		return nil, fmt.Errorf("conta não encontrada: %w", err)
+	}
+	if !configEnc.Valid || configEnc.String == "" {
+		return nil, fmt.Errorf("conta %s não tem provedor_config configurado", contaID)
+	}
+	configJSON, err := DecryptConfig(configEnc.String)
+	if err != nil {
+		return nil, fmt.Errorf("decrypt config: %w", err)
+	}
+	provider, ok := GetProvider(provedor)
+	if !ok {
+		return nil, fmt.Errorf("provider '%s' não suportado", provedor)
+	}
+	var cfg ProviderConfig
+	if err := json.Unmarshal([]byte(configJSON), &cfg); err != nil {
+		return nil, fmt.Errorf("config inválido: %w", err)
+	}
+	return syncAccountPeriodo(db, contaID, provider, cfg, dataInicio, dataFim)
+}
+
+func syncAccountPeriodo(db *sql.DB, contaID string, provider BankProvider, cfg ProviderConfig, dataInicio, dataFim string) (*SyncResult, error) {
 	txs, err := provider.GetExtrato(cfg, dataInicio, dataFim)
 	if err != nil {
 		return nil, fmt.Errorf("extrato: %w", err)
 	}
 
-	res := &SyncResult{}
+	res := &SyncResult{DataInicio: dataInicio, DataFim: dataFim}
 	for _, tx := range txs {
 		if tx.IDExterno == "" {
 			continue
@@ -56,9 +111,9 @@ func SyncAccount(db *sql.DB, contaID, provedor, configJSON string) (*SyncResult,
 		}
 		_, err := db.Exec(`
 			INSERT INTO financeiro.transacoes
-			    (conta_id, data_transacao, descricao, valor, tipo, categoria, referencia_ext, conciliado)
-			VALUES ($1, $2, $3, $4, $5, $6, $7, true)`,
-			contaID, tx.DataTransacao, tx.Descricao, tx.Valor, tx.Tipo, tx.Categoria, tx.IDExterno,
+			    (conta_id, data_transacao, descricao, valor, tipo, categoria, referencia_ext, conciliado, detalhes)
+			VALUES ($1, $2, $3, $4, $5, $6, $7, true, NULLIF($8,'')::jsonb)`,
+			contaID, tx.DataTransacao, tx.Descricao, tx.Valor, tx.Tipo, tx.Categoria, tx.IDExterno, tx.Detalhes,
 		)
 		if err != nil {
 			log.Printf("[bank-sync] erro inserindo tx %s conta %s: %v", tx.IDExterno, contaID, err)

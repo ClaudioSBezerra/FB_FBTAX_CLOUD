@@ -323,3 +323,88 @@ func TestBancosConfig_SegredosNuncaVoltamEBrancoPreserva(t *testing.T) {
 		t.Fatalf("sem chave de criptografia deveria dar 422, veio %d", rr.Code)
 	}
 }
+
+// Manutenção de contas, histórico de sincronização, filtros de lançamentos e validação do período.
+func TestBancosManutencao_ContaSyncLogETransacoes(t *testing.T) {
+	db := nfseTestDB(t)
+	contas := ContasFinanceirasHandler(db)
+
+	rr := chamar(contas, http.MethodPost, "/", []byte(`{"apelido":"Inter manut","banco":"077 - INTER","agencia":"0001","conta":"123","tipo":"corrente","provedor":"inter"}`), "application/json")
+	var criada struct {
+		ID string `json:"id"`
+	}
+	if rr.Code != http.StatusCreated || json.Unmarshal(rr.Body.Bytes(), &criada) != nil || criada.ID == "" {
+		t.Fatalf("criar conta: %d %s", rr.Code, rr.Body)
+	}
+	t.Cleanup(func() {
+		db.Exec(`DELETE FROM financeiro.inter_sync_log WHERE conta_id = $1`, criada.ID)
+		db.Exec(`DELETE FROM financeiro.contas_financeiras WHERE id = $1`, criada.ID)
+	})
+	// Editar.
+	b, _ := json.Marshal(map[string]any{"id": criada.ID, "apelido": "Inter renomeada", "banco": "077 - INTER", "agencia": "0001", "conta": "999", "tipo": "corrente", "ativa": true})
+	if rr := chamar(contas, http.MethodPut, "/", b, "application/json"); rr.Code != 200 {
+		t.Fatalf("editar conta: %d %s", rr.Code, rr.Body)
+	}
+	var apelido, conta string
+	db.QueryRow(`SELECT apelido, conta FROM financeiro.contas_financeiras WHERE id=$1`, criada.ID).Scan(&apelido, &conta)
+	if apelido != "Inter renomeada" || conta != "999" {
+		t.Fatalf("edição não gravou: %q %q", apelido, conta)
+	}
+	if rr := chamar(contas, http.MethodPut, "/", []byte(`{"id":"`+criada.ID+`","apelido":"","banco":""}`), "application/json"); rr.Code != http.StatusBadRequest {
+		t.Fatalf("PUT sem apelido/banco deveria dar 400: %d", rr.Code)
+	}
+
+	// Sincronização: período inválido (400), sem credenciais (422), e uma em andamento bloqueia outra (409).
+	sync := BancosSyncHandler(db)
+	post := func(corpo string) *httptest.ResponseRecorder {
+		return chamar(sync, http.MethodPost, "/", []byte(corpo), "application/json")
+	}
+	if rr := post(`{"conta_id":"` + criada.ID + `","data_inicio":"2026-01-01","data_fim":"2026-12-31"}`); rr.Code != http.StatusBadRequest {
+		t.Fatalf("período > 90 dias: %d %s", rr.Code, rr.Body)
+	}
+	if rr := post(`{"conta_id":"` + criada.ID + `"}`); rr.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("sem credenciais: %d %s", rr.Code, rr.Body)
+	}
+	db.Exec(`UPDATE financeiro.contas_financeiras SET provedor_config = 'x' WHERE id = $1`, criada.ID)
+	db.Exec(`INSERT INTO financeiro.inter_sync_log (conta_id, status, data_inicio, data_fim) VALUES ($1, 'running', '2026-10-01', '2026-10-31')`, criada.ID)
+	if rr := post(`{"conta_id":"` + criada.ID + `"}`); rr.Code != http.StatusConflict {
+		t.Fatalf("sync em andamento: %d %s", rr.Code, rr.Body)
+	}
+
+	// Histórico.
+	db.Exec(`INSERT INTO financeiro.inter_sync_log (conta_id, status, data_inicio, data_fim, tx_importadas, tx_duplicadas, encerrado_em) VALUES ($1, 'ok', '2026-09-01', '2026-09-30', 7, 3, NOW())`, criada.ID)
+	rr = chamar(BancosSyncLogHandler(db), http.MethodGet, "/?conta_id="+criada.ID, nil, "")
+	var logs []map[string]any
+	if json.Unmarshal(rr.Body.Bytes(), &logs) != nil || len(logs) != 2 {
+		t.Fatalf("histórico: %d %s", rr.Code, rr.Body)
+	}
+
+	// Lançamentos: filtros por período, tipo e texto.
+	for _, l := range []struct{ data, desc, tipo, cat, ref string }{
+		{"2026-10-05", "PIX RECEBIDO JC", "credito", "PIX", "ft-1"},
+		{"2026-10-20", "BOLETO LIQUIDADO", "credito", "BOLETO_COBRANCA", "ft-2"},
+		{"2026-10-21", "PAGAMENTO CONTA", "debito", "PAGAMENTO", "ft-3"},
+		{"2026-09-10", "PIX ANTIGO", "credito", "PIX", "ft-4"},
+	} {
+		db.Exec(`INSERT INTO financeiro.transacoes (conta_id, data_transacao, descricao, valor, tipo, categoria, referencia_ext) VALUES ($1,$2,$3,10,$4,$5,$6) ON CONFLICT DO NOTHING`, criada.ID, l.data, l.desc, l.tipo, l.cat, l.ref)
+	}
+	lista := func(q string) int {
+		rr := chamar(TransacoesHandler(db), http.MethodGet, "/?conta_id="+criada.ID+q, nil, "")
+		var out []map[string]any
+		json.Unmarshal(rr.Body.Bytes(), &out)
+		return len(out)
+	}
+	if n := lista("&data_inicio=2026-10-01&data_fim=2026-10-31"); n != 3 {
+		t.Errorf("período de outubro: %d, esperado 3", n)
+	}
+	if n := lista("&data_inicio=2026-10-01&data_fim=2026-10-31&tipo=debito"); n != 1 {
+		t.Errorf("só saídas: %d, esperado 1", n)
+	}
+	if n := lista("&q=pix"); n != 2 {
+		t.Errorf("busca por pix: %d, esperado 2", n)
+	}
+	if n := lista("&q=BOLETO_COB"); n != 1 {
+		t.Errorf("busca pela categoria: %d, esperado 1", n)
+	}
+	db.Exec(`DELETE FROM financeiro.transacoes WHERE conta_id = $1`, criada.ID)
+}

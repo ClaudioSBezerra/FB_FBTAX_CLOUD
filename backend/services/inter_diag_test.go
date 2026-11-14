@@ -6,10 +6,14 @@ import (
 	"crypto/rand"
 	"crypto/x509"
 	"crypto/x509/pkix"
+	"database/sql"
+	"encoding/json"
 	"encoding/pem"
+	_ "github.com/lib/pq"
 	"math/big"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -213,5 +217,119 @@ func TestInterExtrato_ClassificaCreditoDebitoPeloSentidoEDeduplica(t *testing.T)
 	again, _ := (&InterProvider{}).GetExtrato(cfg, "2026-11-01", "2026-11-14")
 	if len(again) != 5 || again[4].IDExterno != txs[4].IDExterno {
 		t.Errorf("identificador sintético precisa ser estável entre sincronizações")
+	}
+}
+
+func TestValidarPeriodoExtrato(t *testing.T) {
+	hoje := time.Now().Format("2006-01-02")
+	ontem := time.Now().AddDate(0, 0, -1).Format("2006-01-02")
+	ha91 := time.Now().AddDate(0, 0, -91).Format("2006-01-02")
+	ha90 := time.Now().AddDate(0, 0, -90).Format("2006-01-02")
+	amanha2 := time.Now().AddDate(0, 0, 3).Format("2006-01-02")
+	for nome, c := range map[string]struct {
+		i, f string
+		ok   bool
+	}{
+		"ok":        {ontem, hoje, true},
+		"90 dias":   {ha90, hoje, true},
+		"91 dias":   {ha91, hoje, false},
+		"invertido": {hoje, ontem, false},
+		"futuro":    {hoje, amanha2, false},
+		"formato":   {"01/11/2026", hoje, false},
+		"vazio":     {"", "", false},
+	} {
+		if err := ValidarPeriodoExtrato(c.i, c.f); (err == nil) != c.ok {
+			t.Errorf("%s: err=%v, esperado ok=%v", nome, err, c.ok)
+		}
+	}
+}
+
+// Sincronização de um período explícito, de ponta a ponta contra um Inter simulado: grava os
+// lançamentos, não duplica na segunda execução e devolve o período consultado.
+func TestSyncAccountFromDBPeriodo_GravaEDeduplica(t *testing.T) {
+	url := os.Getenv("TEST_DATABASE_URL")
+	if url == "" {
+		t.Skip("TEST_DATABASE_URL não definido")
+	}
+	t.Setenv("FINANCEIRO_SECRET", "segredo-de-teste")
+	db, err := sql.Open("postgres", url)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/oauth/v2/token", func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(`{"access_token":"t","expires_in":3600,"scope":"extrato.read"}`))
+	})
+	// Extrato enriquecido em duas páginas, com detalhes por lançamento.
+	mux.HandleFunc("/banking/v2/extrato/completo", func(w http.ResponseWriter, r *http.Request) {
+		q := r.URL.Query()
+		if q.Get("dataInicio") != "2026-10-01" || q.Get("dataFim") != "2026-10-31" {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		switch q.Get("pagina") {
+		case "0":
+			w.Write([]byte(`{"totalPaginas":2,"ultimaPagina":false,"primeiraPagina":true,"transacoes":[
+				{"idTransacao":"sync-1","dataTransacao":"2026-10-05","tipoTransacao":"PIX","tipoOperacao":"C","valor":2500,"descricao":"PIX RECEBIDO","detalhes":{"endToEnd":"E123","nomePagador":"JC DISTRIBUICAO","cpfCnpjPagador":"06314327000203"}}]}`))
+		case "1":
+			w.Write([]byte(`{"totalPaginas":2,"ultimaPagina":true,"primeiraPagina":false,"transacoes":[
+				{"idTransacao":"sync-2","dataTransacao":"2026-10-06","tipoTransacao":"PAGAMENTO","tipoOperacao":"D","valor":100,"descricao":"PAGAMENTO"}]}`))
+		default:
+			w.WriteHeader(http.StatusBadRequest)
+		}
+	})
+	mux.HandleFunc("/banking/v2/saldo", func(w http.ResponseWriter, r *http.Request) { w.Write([]byte(`{"disponivel":777.5}`)) })
+	srv := httptest.NewTLSServer(mux)
+	defer srv.Close()
+	pool := x509.NewCertPool()
+	pool.AddCert(srv.Certificate())
+	mtlsRootCAsTeste = pool
+	defer func() { mtlsRootCAsTeste = nil }()
+	interTokenCache.Range(func(k, _ any) bool { interTokenCache.Delete(k); return true })
+
+	certPEM, keyPEM := parCertInter(t, time.Now().Add(time.Hour))
+	cfgJSON, _ := json.Marshal(ProviderConfig{ClientID: "x", ClientSecret: "y", CertPEM: certPEM, KeyPEM: keyPEM, BaseURL: srv.URL})
+	enc, err := EncryptConfig(string(cfgJSON))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var contaID string
+	if err := db.QueryRow(`INSERT INTO financeiro.contas_financeiras (apelido, banco, provedor, provedor_config) VALUES ('Sync teste','077','inter',$1) RETURNING id`, enc).Scan(&contaID); err != nil {
+		t.Fatal(err)
+	}
+	defer db.Exec(`DELETE FROM financeiro.contas_financeiras WHERE id = $1`, contaID)
+
+	if _, err := SyncAccountFromDBPeriodo(db, contaID, "2026-10-01", "2026-12-31"); err == nil {
+		t.Fatal("período maior que 90 dias deveria ser recusado")
+	}
+	r1, err := SyncAccountFromDBPeriodo(db, contaID, "2026-10-01", "2026-10-31")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r1.Importadas != 2 || r1.Duplicadas != 0 || r1.SaldoFinal != 777.5 || r1.DataInicio != "2026-10-01" || r1.DataFim != "2026-10-31" {
+		t.Fatalf("primeira sync: %+v", r1)
+	}
+	r2, err := SyncAccountFromDBPeriodo(db, contaID, "2026-10-01", "2026-10-31")
+	if err != nil || r2.Importadas != 0 || r2.Duplicadas != 2 {
+		t.Fatalf("segunda sync deveria só achar duplicadas: %+v %v", r2, err)
+	}
+	var det string
+	if err := db.QueryRow(`SELECT detalhes::text FROM financeiro.transacoes WHERE referencia_ext = 'sync-1'`).Scan(&det); err != nil || !strings.Contains(det, "06314327000203") {
+		t.Fatalf("detalhes do lançamento não foram guardados: %q %v", det, err)
+	}
+	var credito, debito float64
+	db.QueryRow(`SELECT COALESCE(SUM(valor) FILTER (WHERE tipo='credito'),0), COALESCE(SUM(valor) FILTER (WHERE tipo='debito'),0) FROM financeiro.transacoes WHERE conta_id=$1`, contaID).Scan(&credito, &debito)
+	if credito != 2500 || debito != 100 {
+		t.Fatalf("lançamentos gravados errado: crédito %v débito %v", credito, debito)
+	}
+}
+
+func TestInterContaCorrente_Normaliza(t *testing.T) {
+	for in, want := range map[string]string{"": "", "0012345-6": "123456", " 12345678 ": "12345678", "000": "", "ab": ""} {
+		if got := interContaCorrente(in); got != want {
+			t.Errorf("%q → %q, esperado %q", in, got, want)
+		}
 	}
 }

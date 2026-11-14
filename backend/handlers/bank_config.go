@@ -7,6 +7,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -283,8 +284,9 @@ func BancosTestarHandler(db *sql.DB) http.HandlerFunc {
 }
 
 // POST /api/financeiro/bancos/sync
-// Dispara sync manual para uma conta específica em background.
-// Body: { conta_id }
+// Dispara sync manual para uma conta em background.
+// Body: { conta_id, data_inicio?, data_fim? } — sem datas usa o período padrão (desde a última sync,
+// mínimo 30 dias); com datas, valida o máximo de 90 dias do Inter.
 func BancosSyncHandler(db *sql.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
@@ -294,14 +296,23 @@ func BancosSyncHandler(db *sql.DB) http.HandlerFunc {
 		w.Header().Set("Content-Type", "application/json")
 
 		var req struct {
-			ContaID string `json:"conta_id"`
+			ContaID    string `json:"conta_id"`
+			DataInicio string `json:"data_inicio"`
+			DataFim    string `json:"data_fim"`
 		}
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.ContaID == "" {
+		if err := json.NewDecoder(io.LimitReader(r.Body, 4<<10)).Decode(&req); err != nil || req.ContaID == "" {
 			http.Error(w, "conta_id obrigatório", http.StatusBadRequest)
 			return
 		}
+		periodo := req.DataInicio != "" || req.DataFim != ""
+		if periodo {
+			if err := services.ValidarPeriodoExtrato(req.DataInicio, req.DataFim); err != nil {
+				w.WriteHeader(http.StatusBadRequest)
+				json.NewEncoder(w).Encode(map[string]string{"erro": err.Error()})
+				return
+			}
+		}
 
-		// Verifica se a conta existe e tem config
 		var provedor string
 		var configEnc sql.NullString
 		err := db.QueryRow(`
@@ -314,17 +325,35 @@ func BancosSyncHandler(db *sql.DB) http.HandlerFunc {
 		}
 		if !configEnc.Valid || configEnc.String == "" {
 			w.WriteHeader(http.StatusUnprocessableEntity)
-			json.NewEncoder(w).Encode(map[string]string{"erro": "Conta sem credenciais configuradas. Configure primeiro em Bancos → Configurar API."})
+			json.NewEncoder(w).Encode(map[string]string{"erro": "Conta sem credenciais configuradas. Configure primeiro em Bancos → Manutenção do banco."})
+			return
+		}
+		// Uma sincronização por vez por conta.
+		var rodando bool
+		db.QueryRow(`SELECT EXISTS(SELECT 1 FROM financeiro.inter_sync_log WHERE conta_id = $1 AND status = 'running' AND iniciado_em > NOW() - INTERVAL '10 minutes')`, req.ContaID).Scan(&rodando)
+		if rodando {
+			w.WriteHeader(http.StatusConflict)
+			json.NewEncoder(w).Encode(map[string]string{"erro": "Já existe uma sincronização em andamento para esta conta."})
 			return
 		}
 
 		var logID string
+		var ini, fim any
+		if periodo {
+			ini, fim = req.DataInicio, req.DataFim
+		}
 		db.QueryRow(`
-			INSERT INTO financeiro.inter_sync_log (conta_id, status)
-			VALUES ($1, 'running') RETURNING id`, req.ContaID).Scan(&logID)
+			INSERT INTO financeiro.inter_sync_log (conta_id, status, data_inicio, data_fim)
+			VALUES ($1, 'running', $2, $3) RETURNING id`, req.ContaID, ini, fim).Scan(&logID)
 
 		go func() {
-			result, err := services.SyncAccountFromDB(db, req.ContaID)
+			var result *services.SyncResult
+			var err error
+			if periodo {
+				result, err = services.SyncAccountFromDBPeriodo(db, req.ContaID, req.DataInicio, req.DataFim)
+			} else {
+				result, err = services.SyncAccountFromDB(db, req.ContaID)
+			}
 			if err != nil {
 				db.Exec(`UPDATE financeiro.inter_sync_log
 					SET encerrado_em = NOW(), status = 'erro', erro_detalhe = $1
@@ -334,15 +363,103 @@ func BancosSyncHandler(db *sql.DB) http.HandlerFunc {
 			db.Exec(`UPDATE financeiro.inter_sync_log
 				SET encerrado_em = NOW(), status = 'ok',
 				    tx_importadas = $1, tx_duplicadas = $2, saldo_final = $3,
-				    data_inicio = NOW()-INTERVAL '30 days', data_fim = NOW()
-				WHERE id = $4`,
-				result.Importadas, result.Duplicadas, result.SaldoFinal, logID)
+				    data_inicio = $4::date, data_fim = $5::date
+				WHERE id = $6`,
+				result.Importadas, result.Duplicadas, result.SaldoFinal, result.DataInicio, result.DataFim, logID)
 		}()
 
 		json.NewEncoder(w).Encode(map[string]string{
 			"mensagem": "Sincronização iniciada",
 			"log_id":   logID,
 		})
+	}
+}
+
+// BancosSyncLogHandler lista o histórico de sincronizações — GET /api/financeiro/bancos/sync-log?conta_id=&limit=
+func BancosSyncLogHandler(db *sql.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if r.Method != http.MethodGet {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		limite := 20
+		if n, err := strconv.Atoi(r.URL.Query().Get("limit")); err == nil && n > 0 && n <= 100 {
+			limite = n
+		}
+		contaID := r.URL.Query().Get("conta_id")
+		rows, err := db.Query(`
+			SELECT id, status, iniciado_em, encerrado_em, data_inicio::text, data_fim::text,
+			       COALESCE(tx_importadas,0), COALESCE(tx_duplicadas,0), saldo_final, COALESCE(erro_detalhe,'')
+			FROM financeiro.inter_sync_log
+			WHERE ($1 = '' OR conta_id::text = $1)
+			ORDER BY iniciado_em DESC LIMIT $2`, contaID, limite)
+		if err != nil {
+			http.Error(w, "db error", http.StatusInternalServerError)
+			return
+		}
+		defer rows.Close()
+		out := []map[string]any{}
+		for rows.Next() {
+			var id, status, erro string
+			var inicio time.Time
+			var fim sql.NullTime
+			var di, df sql.NullString
+			var imp, dup int
+			var saldo sql.NullFloat64
+			if rows.Scan(&id, &status, &inicio, &fim, &di, &df, &imp, &dup, &saldo, &erro) != nil {
+				continue
+			}
+			m := map[string]any{"id": id, "status": status, "iniciado_em": inicio, "tx_importadas": imp, "tx_duplicadas": dup, "erro": erro}
+			if fim.Valid {
+				m["encerrado_em"] = fim.Time
+			}
+			if di.Valid {
+				m["data_inicio"] = di.String
+			}
+			if df.Valid {
+				m["data_fim"] = df.String
+			}
+			if saldo.Valid {
+				m["saldo_final"] = saldo.Float64
+			}
+			out = append(out, m)
+		}
+		json.NewEncoder(w).Encode(out)
+	}
+}
+
+// BancosSaldoHandler consulta o saldo AO VIVO no banco e atualiza o saldo guardado da conta —
+// GET /api/financeiro/bancos/saldo?conta_id=. O Inter limita 10 chamadas por minuto.
+func BancosSaldoHandler(db *sql.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if r.Method != http.MethodGet {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		contaID := r.URL.Query().Get("conta_id")
+		prov, cfg, existe, err := carregarConfigBanco(db, contaID)
+		if err != nil || !existe {
+			w.WriteHeader(http.StatusUnprocessableEntity)
+			json.NewEncoder(w).Encode(map[string]string{"erro": "Conta sem credenciais configuradas."})
+			return
+		}
+		provider, ok := services.GetProvider(prov)
+		if !ok {
+			w.WriteHeader(http.StatusUnprocessableEntity)
+			json.NewEncoder(w).Encode(map[string]string{"erro": "provedor não suportado"})
+			return
+		}
+		saldo, err := provider.GetSaldo(cfg)
+		if err != nil {
+			log.Printf("[Bancos] saldo da conta %s: %v", contaID, err)
+			w.WriteHeader(http.StatusFailedDependency) // 424: o Cloudflare mascara 502/504
+			json.NewEncoder(w).Encode(map[string]string{"erro": err.Error()})
+			return
+		}
+		db.Exec(`UPDATE financeiro.contas_financeiras SET saldo = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2`, saldo.Disponivel, contaID)
+		json.NewEncoder(w).Encode(map[string]any{"disponivel": saldo.Disponivel, "bloqueado": saldo.Bloqueado, "consultado_em": time.Now()})
 	}
 }
 

@@ -178,7 +178,9 @@ func interBankingGET(cfg ProviderConfig, caminho, query string) ([]byte, string,
 		}
 		req, _ := http.NewRequest("GET", u, nil)
 		req.Header.Set("Authorization", "Bearer "+token)
-		req.Header.Set("x-conta-corrente", cfg.ContaCorrente)
+		if conta := interContaCorrente(cfg.ContaCorrente); conta != "" {
+			req.Header.Set("x-conta-corrente", conta)
+		}
 		resp, err := client.Do(req)
 		if err != nil {
 			return nil, "", err
@@ -196,30 +198,69 @@ func interBankingGET(cfg ProviderConfig, caminho, query string) ([]byte, string,
 	return nil, "", ultimo
 }
 
+// interExtratoPorPagina é o tamanho de página do extrato enriquecido (o Inter aceita até 10.000).
+const interExtratoPorPagina = 1000
+
+// interTransacaoBruta são os campos usados de cada lançamento; o JSON completo é guardado à parte.
+type interTransacaoBruta struct {
+	DataTransacao string  `json:"dataTransacao"`
+	DataInclusao  string  `json:"dataInclusao"`
+	TipoTransacao string  `json:"tipoTransacao"` // PIX, BOLETO_COBRANCA, TRANSFERENCIA, PAGAMENTO, ...
+	TipoOperacao  string  `json:"tipoOperacao"`  // C (entrada) | D (saída)
+	Valor         float64 `json:"valor"`
+	Titulo        string  `json:"titulo"`
+	Descricao     string  `json:"descricao"`
+	IDTransacao   string  `json:"idTransacao"`
+}
+
+// GetExtrato busca o extrato ENRIQUECIDO (/extrato/completo, paginado) e guarda o JSON de cada
+// lançamento em Detalhes. Se o Inter não o oferecer para a integração, cai para o extrato simples.
 func (p *InterProvider) GetExtrato(cfg ProviderConfig, dataInicio, dataFim string) ([]BankTransacao, error) {
-	raw, _, err := interBankingGET(cfg, "/extrato", "dataInicio="+dataInicio+"&dataFim="+dataFim)
-	if err != nil {
-		return nil, fmt.Errorf("inter extrato: %w", err)
+	var brutos []json.RawMessage
+	completo := true
+	for pagina := 0; pagina < 50; pagina++ {
+		q := fmt.Sprintf("dataInicio=%s&dataFim=%s&pagina=%d&tamanhoPagina=%d", dataInicio, dataFim, pagina, interExtratoPorPagina)
+		raw, _, err := interBankingGET(cfg, "/extrato/completo", q)
+		if err != nil {
+			if pagina == 0 {
+				completo = false // sem o enriquecido: usa o simples
+				break
+			}
+			return nil, fmt.Errorf("inter extrato (página %d): %w", pagina, err)
+		}
+		var pg struct {
+			UltimaPagina bool              `json:"ultimaPagina"`
+			TotalPaginas int               `json:"totalPaginas"`
+			Transacoes   []json.RawMessage `json:"transacoes"`
+		}
+		if err := json.Unmarshal(raw, &pg); err != nil {
+			return nil, fmt.Errorf("inter extrato parse: %w", err)
+		}
+		brutos = append(brutos, pg.Transacoes...)
+		if pg.UltimaPagina || len(pg.Transacoes) == 0 || (pg.TotalPaginas > 0 && pagina+1 >= pg.TotalPaginas) {
+			break
+		}
+	}
+	if !completo {
+		raw, _, err := interBankingGET(cfg, "/extrato", "dataInicio="+dataInicio+"&dataFim="+dataFim)
+		if err != nil {
+			return nil, fmt.Errorf("inter extrato: %w", err)
+		}
+		var ex struct {
+			Transacoes []json.RawMessage `json:"transacoes"`
+		}
+		if err := json.Unmarshal(raw, &ex); err != nil {
+			return nil, fmt.Errorf("inter extrato parse: %w", err)
+		}
+		brutos = ex.Transacoes
 	}
 
-	var ex struct {
-		Transacoes []struct {
-			DataTransacao string  `json:"dataTransacao"`
-			DataInclusao  string  `json:"dataInclusao"`
-			TipoTransacao string  `json:"tipoTransacao"` // PIX, BOLETO_COBRANCA, TRANSFERENCIA, PAGAMENTO, ...
-			TipoOperacao  string  `json:"tipoOperacao"`  // C (entrada) | D (saída)
-			Valor         float64 `json:"valor"`
-			Titulo        string  `json:"titulo"`
-			Descricao     string  `json:"descricao"`
-			IDTransacao   string  `json:"idTransacao"`
-		} `json:"transacoes"`
-	}
-	if err := json.Unmarshal(raw, &ex); err != nil {
-		return nil, fmt.Errorf("inter extrato parse: %w", err)
-	}
-
-	txs := make([]BankTransacao, 0, len(ex.Transacoes))
-	for _, t := range ex.Transacoes {
+	txs := make([]BankTransacao, 0, len(brutos))
+	for _, bruto := range brutos {
+		var t interTransacaoBruta
+		if json.Unmarshal(bruto, &t) != nil {
+			continue
+		}
 		tipo, categoria := interSentido(t.TipoOperacao, t.TipoTransacao)
 		if tipo == "" {
 			continue // sentido desconhecido: não arrisca lançar crédito/débito errado
@@ -244,7 +285,11 @@ func (p *InterProvider) GetExtrato(cfg ProviderConfig, dataInicio, dataFim strin
 			soma := sha256.Sum256([]byte(fmt.Sprintf("%s|%s|%.2f|%s|%s", data, tipo, valor, desc, categoria)))
 			id = "h-" + hex.EncodeToString(soma[:8])
 		}
-		txs = append(txs, BankTransacao{IDExterno: id, DataTransacao: data, Descricao: desc, Valor: valor, Tipo: tipo, Categoria: categoria})
+		det := ""
+		if completo {
+			det = string(bruto)
+		}
+		txs = append(txs, BankTransacao{IDExterno: id, DataTransacao: data, Descricao: desc, Valor: valor, Tipo: tipo, Categoria: categoria, Detalhes: det})
 	}
 	return txs, nil
 }
@@ -269,4 +314,17 @@ func interSentido(operacao, transacao string) (tipo, categoria string) {
 		return t, operacao
 	}
 	return "", ""
+}
+
+// interContaCorrente normaliza o cabeçalho x-conta-corrente: só dígitos (inclusive o dígito
+// verificador) e sem zeros à esquerda, como a referência do Inter exige. Vazio = não enviar o
+// cabeçalho (só é necessário quando a integração tem mais de uma conta).
+func interContaCorrente(s string) string {
+	var b strings.Builder
+	for _, r := range s {
+		if r >= '0' && r <= '9' {
+			b.WriteRune(r)
+		}
+	}
+	return strings.TrimLeft(b.String(), "0")
 }

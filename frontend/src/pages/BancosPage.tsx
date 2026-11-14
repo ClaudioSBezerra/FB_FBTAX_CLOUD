@@ -11,10 +11,16 @@ interface Conta {
   id: string
   apelido: string
   banco: string
+  agencia?: string
+  conta?: string
+  tipo?: string
   provedor: string
   saldo: number
+  ultima_sync?: string
   configurado: boolean
 }
+
+const contaVazia = { apelido: '', banco: '077 - BANCO INTER S.A.', agencia: '0001', conta: '', tipo: 'corrente', provedor: 'inter' }
 
 interface Meta {
   configurado: boolean
@@ -79,10 +85,39 @@ export default function BancosPage() {
   const [diag, setDiag] = useState<Diag | null>(null)
   const [ocupado, setOcupado] = useState(false)
 
+  const [form, setForm] = useState<typeof contaVazia & { id?: string }>(contaVazia)
+  const [editando, setEditando] = useState(false)
+
+  // Contas (com agência/conta/tipo) + indicador de credenciais vindo do status dos bancos.
   const carregarContas = useCallback(async () => {
-    const res = await fetch('/api/financeiro/bancos/status')
-    if (res.ok) setContas(await res.json())
+    const [a, b] = await Promise.all([fetch('/api/financeiro/contas-financeiras'), fetch('/api/financeiro/bancos/status')])
+    if (!a.ok) return
+    const contasBase: Conta[] = await a.json()
+    const status: { id: string; configurado: boolean }[] = b.ok ? await b.json() : []
+    const cfg = new Map(status.map(s => [s.id, s.configurado]))
+    setContas(contasBase.map(c => ({ ...c, configurado: cfg.get(c.id) ?? false })))
   }, [])
+
+  const salvarConta = async () => {
+    if (!form.apelido.trim() || !form.banco.trim()) return toast.error('Informe o apelido e o banco')
+    const res = await fetch('/api/financeiro/contas-financeiras', {
+      method: editando ? 'PUT' : 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ...form, ativa: true }),
+    })
+    if (!res.ok) return toast.error(await erroDe(res))
+    toast.success(editando ? 'Conta atualizada' : 'Conta criada')
+    setForm(contaVazia); setEditando(false)
+    carregarContas()
+  }
+
+  const desativarConta = async (c: Conta) => {
+    if (!window.confirm(`Desativar a conta "${c.apelido}"? Os lançamentos já importados são mantidos.`)) return
+    const res = await fetch(`/api/financeiro/contas-financeiras?id=${c.id}`, { method: 'DELETE' })
+    if (!res.ok) return toast.error(await erroDe(res))
+    if (contaId === c.id) setContaId('')
+    toast.success('Conta desativada')
+    carregarContas()
+  }
 
   const carregarMeta = useCallback(async (id: string) => {
     setDiag(null)
@@ -134,22 +169,63 @@ export default function BancosPage() {
   return (
     <div className="min-h-screen bg-gray-50 p-8">
       <div className="max-w-3xl mx-auto space-y-6">
-        <h1 className="text-2xl font-semibold">Bancos — integração Inter</h1>
+        <h1 className="text-2xl font-semibold">Manutenção do banco</h1>
 
         <Card>
-          <CardHeader><CardTitle>1. Conta</CardTitle></CardHeader>
-          <CardContent className="space-y-2">
-            <select className="w-full border rounded h-10 px-2 bg-white" value={contaId} onChange={e => setContaId(e.target.value)}>
-              <option value="">Selecione a conta…</option>
-              {contas.map(c => <option key={c.id} value={c.id}>{c.apelido} — {c.banco}{c.configurado ? ' (configurada)' : ''}</option>)}
-            </select>
-            <p className="text-xs text-gray-500">A conta é criada no Painel Financeiro. Aqui só se guardam as credenciais da API.</p>
+          <CardHeader><CardTitle>1. Contas bancárias</CardTitle></CardHeader>
+          <CardContent className="space-y-4">
+            <table className="w-full text-sm">
+              <thead><tr className="text-left border-b"><th>Conta</th><th>Banco</th><th>Agência / Conta</th><th>API</th><th>Última sync</th><th className="text-right">Saldo</th><th></th></tr></thead>
+              <tbody>
+                {contas.map(c => (
+                  <tr key={c.id} className={`border-b cursor-pointer ${contaId === c.id ? 'bg-teal-50' : ''}`} onClick={() => setContaId(c.id)}>
+                    <td className="font-medium">{c.apelido}</td>
+                    <td>{c.banco}</td>
+                    <td>{c.agencia || '-'} / {c.conta || '-'}</td>
+                    <td>{c.provedor ? <Badge variant={c.configurado ? 'default' : 'secondary'}>{c.provedor}{c.configurado ? ' ✓' : ' sem credenciais'}</Badge> : <span className="text-gray-400">manual</span>}</td>
+                    <td>{c.ultima_sync ? new Date(c.ultima_sync).toLocaleString('pt-BR') : '—'}</td>
+                    <td className="text-right">{brl(c.saldo)}</td>
+                    <td className="whitespace-nowrap space-x-1" onClick={e => e.stopPropagation()}>
+                      <Button size="sm" variant="outline" onClick={() => { setForm({ id: c.id, apelido: c.apelido, banco: c.banco, agencia: c.agencia || '', conta: c.conta || '', tipo: c.tipo || 'corrente', provedor: c.provedor || '' }); setEditando(true) }}>Editar</Button>
+                      <Button size="sm" variant="outline" onClick={() => desativarConta(c)}>Desativar</Button>
+                    </td>
+                  </tr>
+                ))}
+                {contas.length === 0 && <tr><td colSpan={7} className="text-gray-500 py-3">Nenhuma conta cadastrada.</td></tr>}
+              </tbody>
+            </table>
+            <div className="border rounded p-3 space-y-3">
+              <p className="text-sm font-medium">{editando ? 'Editar conta' : 'Nova conta'}</p>
+              <div className="grid grid-cols-4 gap-3">
+                <div className="col-span-2"><Label>Apelido</Label><Input value={form.apelido} onChange={e => setForm({ ...form, apelido: e.target.value })} placeholder="Inter PJ — principal" /></div>
+                <div className="col-span-2"><Label>Banco</Label><Input value={form.banco} onChange={e => setForm({ ...form, banco: e.target.value })} /></div>
+                <div><Label>Agência</Label><Input value={form.agencia} onChange={e => setForm({ ...form, agencia: e.target.value })} /></div>
+                <div><Label>Conta</Label><Input value={form.conta} onChange={e => setForm({ ...form, conta: e.target.value })} /></div>
+                <div>
+                  <Label>Tipo</Label>
+                  <select className="w-full border rounded h-10 px-2 bg-white" value={form.tipo} onChange={e => setForm({ ...form, tipo: e.target.value })}>
+                    <option value="corrente">Corrente</option><option value="poupanca">Poupança</option><option value="investimento">Investimento</option>
+                  </select>
+                </div>
+                <div>
+                  <Label>Integração (API)</Label>
+                  <select className="w-full border rounded h-10 px-2 bg-white" value={form.provedor} onChange={e => setForm({ ...form, provedor: e.target.value })}>
+                    <option value="">Manual (sem API)</option><option value="inter">Banco Inter</option>
+                  </select>
+                </div>
+              </div>
+              <div className="flex gap-2">
+                <Button onClick={salvarConta}>{editando ? 'Salvar alterações' : 'Criar conta'}</Button>
+                {editando && <Button variant="outline" onClick={() => { setForm(contaVazia); setEditando(false) }}>Cancelar</Button>}
+              </div>
+            </div>
+            <p className="text-xs text-gray-500">Clique numa conta para configurar as credenciais da API e testar a integração. Para ver o extrato e sincronizar, use <b>Bancos › Sincronização</b>.</p>
           </CardContent>
         </Card>
 
         {contaId && (
           <Card>
-            <CardHeader><CardTitle>2. Credenciais da integração</CardTitle></CardHeader>
+            <CardHeader><CardTitle>2. Credenciais da integração — {contas.find(c => c.id === contaId)?.apelido}</CardTitle></CardHeader>
             <CardContent className="space-y-3">
               {meta?.configurado && (
                 <p className="text-sm">

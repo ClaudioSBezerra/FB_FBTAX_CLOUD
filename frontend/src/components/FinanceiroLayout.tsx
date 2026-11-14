@@ -9,7 +9,8 @@ const navItems = [
   { label: 'Produtos', path: '/admin/financeiro/produtos' },
   { label: 'Contratos', path: '/admin/financeiro/contratos' },
   { label: 'NFS-e', path: '/admin/financeiro/nfse' },
-  { label: 'Bancos', path: '/admin/financeiro/bancos' },
+  { label: 'Manutenção do banco', path: '/admin/financeiro/bancos' },
+  { label: 'Sincronização bancária', path: '/admin/financeiro/bancos/sincronizacao' },
   { label: 'Termos de Entrega', path: '/admin/financeiro/entregas' },
   { label: 'Tokens', path: '/admin/financeiro/tokens' },
   { label: 'API Keys', path: '/admin/financeiro/api-keys' },
@@ -39,7 +40,7 @@ export default function FinanceiroLayout({ children }: { children: React.ReactNo
             <NavLink
               key={item.path}
               to={item.path}
-              end={item.path === '/admin/financeiro'}
+              end={item.path === '/admin/financeiro' || item.path === '/admin/financeiro/bancos'}
               className={({ isActive }) =>
                 `block px-3 py-2 rounded-md text-sm transition-colors ${
                   isActive

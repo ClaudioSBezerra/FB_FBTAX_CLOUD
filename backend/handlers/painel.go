@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -22,17 +23,17 @@ type ContaFinanceiraRequest struct {
 }
 
 type ContaFinanceiraResponse struct {
-	ID         string   `json:"id"`
-	Apelido    string   `json:"apelido"`
-	Banco      string   `json:"banco"`
-	Agencia    string   `json:"agencia,omitempty"`
-	Conta      string   `json:"conta,omitempty"`
-	Tipo       string   `json:"tipo"`
-	Provedor   string   `json:"provedor,omitempty"`
-	ProvedorID string   `json:"provedor_id,omitempty"`
-	Saldo      float64  `json:"saldo"`
-	UltimaSync *string  `json:"ultima_sync,omitempty"`
-	Ativa      bool     `json:"ativa"`
+	ID         string  `json:"id"`
+	Apelido    string  `json:"apelido"`
+	Banco      string  `json:"banco"`
+	Agencia    string  `json:"agencia,omitempty"`
+	Conta      string  `json:"conta,omitempty"`
+	Tipo       string  `json:"tipo"`
+	Provedor   string  `json:"provedor,omitempty"`
+	ProvedorID string  `json:"provedor_id,omitempty"`
+	Saldo      float64 `json:"saldo"`
+	UltimaSync *string `json:"ultima_sync,omitempty"`
+	Ativa      bool    `json:"ativa"`
 }
 
 func ContasFinanceirasHandler(db *sql.DB) http.HandlerFunc {
@@ -97,6 +98,37 @@ func ContasFinanceirasHandler(db *sql.DB) http.HandlerFunc {
 			w.WriteHeader(http.StatusCreated)
 			json.NewEncoder(w).Encode(map[string]string{"id": id})
 
+		case http.MethodPut:
+			var req struct {
+				ContaFinanceiraRequest
+				ID    string `json:"id"`
+				Ativa *bool  `json:"ativa"`
+			}
+			if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.ID == "" || req.Apelido == "" || req.Banco == "" {
+				http.Error(w, "id, apelido e banco são obrigatórios", http.StatusBadRequest)
+				return
+			}
+			if req.Tipo == "" {
+				req.Tipo = "corrente"
+			}
+			ativa := true
+			if req.Ativa != nil {
+				ativa = *req.Ativa
+			}
+			res, err := db.Exec(`
+				UPDATE financeiro.contas_financeiras
+				SET apelido = $1, banco = $2, agencia = $3, conta = $4, tipo = $5, ativa = $6, updated_at = CURRENT_TIMESTAMP
+				WHERE id = $7`, req.Apelido, req.Banco, req.Agencia, req.Conta, req.Tipo, ativa, req.ID)
+			if err != nil {
+				http.Error(w, "error updating conta", http.StatusInternalServerError)
+				return
+			}
+			if n, _ := res.RowsAffected(); n == 0 {
+				http.Error(w, "conta not found", http.StatusNotFound)
+				return
+			}
+			json.NewEncoder(w).Encode(map[string]string{"status": "updated"})
+
 		case http.MethodDelete:
 			id := r.URL.Query().Get("id")
 			if id == "" {
@@ -156,11 +188,13 @@ func TransacoesHandler(db *sql.DB) http.HandlerFunc {
 		case http.MethodGet:
 			limit := 50
 			if l := r.URL.Query().Get("limit"); l != "" {
-				if n, err := strconv.Atoi(l); err == nil && n > 0 && n <= 200 {
+				if n, err := strconv.Atoi(l); err == nil && n > 0 && n <= 1000 {
 					limit = n
 				}
 			}
 			contaID := r.URL.Query().Get("conta_id")
+			dataInicio, dataFim := r.URL.Query().Get("data_inicio"), r.URL.Query().Get("data_fim")
+			tipoFiltro, busca := r.URL.Query().Get("tipo"), strings.TrimSpace(r.URL.Query().Get("q"))
 
 			query := `
 				SELECT t.id, t.conta_id, cf.apelido, t.data_transacao,
@@ -174,6 +208,26 @@ func TransacoesHandler(db *sql.DB) http.HandlerFunc {
 			if contaID != "" {
 				query += ` AND t.conta_id = $` + strconv.Itoa(argN)
 				args = append(args, contaID)
+				argN++
+			}
+			if _, err := time.Parse("2006-01-02", dataInicio); err == nil {
+				query += ` AND t.data_transacao >= $` + strconv.Itoa(argN)
+				args = append(args, dataInicio)
+				argN++
+			}
+			if _, err := time.Parse("2006-01-02", dataFim); err == nil {
+				query += ` AND t.data_transacao <= $` + strconv.Itoa(argN)
+				args = append(args, dataFim)
+				argN++
+			}
+			if tipoFiltro == "credito" || tipoFiltro == "debito" {
+				query += ` AND t.tipo = $` + strconv.Itoa(argN)
+				args = append(args, tipoFiltro)
+				argN++
+			}
+			if busca != "" {
+				query += ` AND (t.descricao ILIKE $` + strconv.Itoa(argN) + ` OR COALESCE(t.categoria,'') ILIKE $` + strconv.Itoa(argN) + `)`
+				args = append(args, "%"+busca+"%")
 				argN++
 			}
 			query += ` ORDER BY t.data_transacao DESC, t.created_at DESC LIMIT $` + strconv.Itoa(argN)
@@ -252,12 +306,12 @@ type FluxoDia struct {
 }
 
 type PainelResponse struct {
-	SaldoTotal  float64    `json:"saldo_total"`
-	Entradas30d float64    `json:"entradas_30d"`
-	Saidas30d   float64    `json:"saidas_30d"`
-	Resultado30d float64   `json:"resultado_30d"`
-	NumContas   int        `json:"num_contas"`
-	Fluxo       []FluxoDia `json:"fluxo"`
+	SaldoTotal   float64    `json:"saldo_total"`
+	Entradas30d  float64    `json:"entradas_30d"`
+	Saidas30d    float64    `json:"saidas_30d"`
+	Resultado30d float64    `json:"resultado_30d"`
+	NumContas    int        `json:"num_contas"`
+	Fluxo        []FluxoDia `json:"fluxo"`
 }
 
 func PainelFinanceiroHandler(db *sql.DB) http.HandlerFunc {

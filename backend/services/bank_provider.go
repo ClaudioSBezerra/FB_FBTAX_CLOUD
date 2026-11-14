@@ -28,6 +28,7 @@ type BankTransacao struct {
 	Valor         float64 // sempre positivo
 	Tipo          string  // "credito" | "debito"
 	Categoria     string  // tipo de operação conforme o banco
+	Detalhes      string  // JSON bruto do lançamento no banco (extrato enriquecido), se houver
 }
 
 // BankProvider é a interface que todos os bancos implementam.
