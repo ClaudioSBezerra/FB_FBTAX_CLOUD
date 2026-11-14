@@ -17,4 +17,4 @@ for f in 110 111 112 113 114 115 116 117 118 119 120 125 126 127; do
 done
 
 cd backend
-TEST_DATABASE_URL="${BASE}/${DB}?sslmode=disable" go test ./services/ ./handlers/ -run "NFSe|Bancos|Inter|Periodo" -count=1 -race -v
+TEST_DATABASE_URL="${BASE}/${DB}?sslmode=disable" go test ./services/ ./handlers/ -run "NFSe|Bancos|Inter|Periodo|Transacoes|ProximoHorario" -count=1 -race -v

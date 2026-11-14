@@ -159,14 +159,27 @@ func SyncAccountFromDB(db *sql.DB, contaID string) (*SyncResult, error) {
 
 // StartBankDailySync inicia o cron diário que sincroniza todas as contas
 // com provedor e provedor_config configurados. Executa às 06:00.
+// HorariosSyncBancaria são as horas do dia (horário local do servidor) em que o cron sincroniza.
+var HorariosSyncBancaria = []int{6, 12, 18}
+
+// ProximoHorarioSync devolve o próximo horário de sincronização estritamente depois de agora.
+func ProximoHorarioSync(agora time.Time, horas []int) time.Time {
+	var melhor time.Time
+	for dia := 0; dia <= 1; dia++ {
+		for _, h := range horas {
+			c := time.Date(agora.Year(), agora.Month(), agora.Day()+dia, h, 0, 0, 0, agora.Location())
+			if c.After(agora) && (melhor.IsZero() || c.Before(melhor)) {
+				melhor = c
+			}
+		}
+	}
+	return melhor
+}
+
 func StartBankDailySync(db *sql.DB) {
 	go func() {
 		for {
-			now := time.Now()
-			next := time.Date(now.Year(), now.Month(), now.Day(), 6, 0, 0, 0, now.Location())
-			if now.After(next) {
-				next = next.Add(24 * time.Hour)
-			}
+			next := ProximoHorarioSync(time.Now(), HorariosSyncBancaria)
 			time.Sleep(time.Until(next))
 
 			rows, err := db.Query(`
@@ -206,9 +219,9 @@ func StartBankDailySync(db *sql.DB) {
 				db.Exec(`UPDATE financeiro.inter_sync_log
 					SET encerrado_em = NOW(), status = 'ok',
 					    tx_importadas = $1, tx_duplicadas = $2, saldo_final = $3,
-					    data_inicio = NOW()-INTERVAL '30 days', data_fim = NOW()
-					WHERE id = $4`,
-					result.Importadas, result.Duplicadas, result.SaldoFinal, logID)
+					    data_inicio = $4::date, data_fim = $5::date
+					WHERE id = $6`,
+					result.Importadas, result.Duplicadas, result.SaldoFinal, result.DataInicio, result.DataFim, logID)
 				log.Printf("[bank-cron] %s: %d importadas, %d duplicadas", j.id, result.Importadas, result.Duplicadas)
 			}
 		}

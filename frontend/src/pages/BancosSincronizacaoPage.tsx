@@ -24,6 +24,7 @@ interface Lancamento {
   valor: number
   tipo: 'credito' | 'debito'
   categoria?: string
+  detalhes?: Record<string, unknown>
 }
 
 interface LogSync {
@@ -41,6 +42,24 @@ interface LogSync {
 
 const brl = (v: number) => v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
 const iso = (d: Date) => d.toISOString().slice(0, 10)
+const mascaraDoc = (s: string) => {
+  const d = s.replace(/\D/g, '')
+  if (d.length === 14) return d.replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/, '$1.$2.$3/$4-$5')
+  if (d.length === 11) return d.replace(/^(\d{3})(\d{3})(\d{3})(\d{2})$/, '$1.$2.$3-$4')
+  return s
+}
+
+// Contraparte do lançamento a partir do detalhe do extrato enriquecido (quem pagou / quem recebeu).
+function contraparte(l: Lancamento): { nome: string; doc: string } | null {
+  const d = l.detalhes
+  if (!d) return null
+  const t = (k: string) => (typeof d[k] === 'string' ? (d[k] as string).trim() : '')
+  const credito = l.tipo === 'credito'
+  const nome = credito ? t('nomePagador') : (t('nomeRecebedor') || t('nomeDestinatario'))
+  const doc = credito ? t('cpfCnpjPagador') : (t('cpfCnpjRecebedor') || t('cpfCnpj'))
+  return nome || doc ? { nome, doc } : null
+}
+
 const dia = (s?: string) => (s ? s.slice(0, 10).split('-').reverse().join('/') : '—')
 
 async function erroDe(res: Response): Promise<string> {
@@ -67,6 +86,7 @@ export default function BancosSincronizacaoPage() {
   const [ocupado, setOcupado] = useState(false)
   const [sincronizando, setSincronizando] = useState(false)
   const [amostra, setAmostra] = useState<string | null>(null)
+  const [aberto, setAberto] = useState<string | null>(null)
   const timer = useRef<number | undefined>()
 
   const conta = contas.find(c => c.id === contaId)
@@ -198,21 +218,32 @@ export default function BancosSincronizacaoPage() {
                 <select className="border rounded h-10 px-2 bg-white" value={tipo} onChange={e => setTipo(e.target.value)}>
                   <option value="">Entradas e saídas</option><option value="credito">Só entradas</option><option value="debito">Só saídas</option>
                 </select>
-                <Input className="max-w-xs" placeholder="Buscar na descrição / tipo (PIX, BOLETO…)" value={busca} onChange={e => setBusca(e.target.value)} />
+                <Input className="max-w-xs" placeholder="Buscar na descrição / tipo (PIX, BOLETO…); clique numa linha para ver o detalhe" value={busca} onChange={e => setBusca(e.target.value)} />
               </div>
               <div className="max-h-96 overflow-auto">
                 <table className="w-full text-sm">
-                  <thead className="sticky top-0 bg-white"><tr className="text-left border-b"><th>Data</th><th>Descrição</th><th>Tipo</th><th className="text-right">Valor</th></tr></thead>
+                  <thead className="sticky top-0 bg-white"><tr className="text-left border-b"><th>Data</th><th>Descrição</th><th>Pagador / destinatário</th><th>Tipo</th><th className="text-right">Valor</th></tr></thead>
                   <tbody>
-                    {lanc.map(l => (
-                      <tr key={l.id} className="border-b">
-                        <td className="whitespace-nowrap">{dia(l.data_transacao)}</td>
-                        <td>{l.descricao}</td>
-                        <td>{l.categoria && <Badge variant="outline">{l.categoria}</Badge>}</td>
-                        <td className={`text-right whitespace-nowrap ${l.tipo === 'credito' ? 'text-green-700' : 'text-red-700'}`}>{l.tipo === 'debito' ? '−' : '+'} {brl(l.valor)}</td>
-                      </tr>
-                    ))}
-                    {lanc.length === 0 && <tr><td colSpan={4} className="text-gray-500 py-3">Nenhum lançamento no período. Clique em "Sincronizar extrato do período".</td></tr>}
+                    {lanc.map(l => {
+                      const c = contraparte(l)
+                      return (
+                        <>
+                          <tr key={l.id} className="border-b cursor-pointer hover:bg-gray-50" onClick={() => setAberto(aberto === l.id ? null : l.id)}>
+                            <td className="whitespace-nowrap">{dia(l.data_transacao)}</td>
+                            <td>{l.descricao}</td>
+                            <td className="text-xs">{c ? <>{c.nome}{c.doc && <div className="text-gray-500">{mascaraDoc(c.doc)}</div>}</> : <span className="text-gray-400">—</span>}</td>
+                            <td>{l.categoria && <Badge variant="outline">{l.categoria}</Badge>}</td>
+                            <td className={`text-right whitespace-nowrap ${l.tipo === 'credito' ? 'text-green-700' : 'text-red-700'}`}>{l.tipo === 'debito' ? '−' : '+'} {brl(l.valor)}</td>
+                          </tr>
+                          {aberto === l.id && (
+                            <tr key={`${l.id}-d`} className="border-b bg-gray-50">
+                              <td colSpan={5}><pre className="text-xs whitespace-pre-wrap p-2">{l.detalhes ? JSON.stringify(l.detalhes, null, 2) : 'Sem detalhes do banco para este lançamento (extrato simples).'}</pre></td>
+                            </tr>
+                          )}
+                        </>
+                      )
+                    })}
+                    {lanc.length === 0 && <tr><td colSpan={5} className="text-gray-500 py-3">Nenhum lançamento no período. Clique em "Sincronizar extrato do período".</td></tr>}
                   </tbody>
                 </table>
               </div>

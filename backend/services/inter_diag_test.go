@@ -450,3 +450,22 @@ func TestInterExtratoSimples_SemIdNemDataTransacao(t *testing.T) {
 		}
 	}
 }
+
+func TestProximoHorarioSync(t *testing.T) {
+	loc := time.FixedZone("x", -3*3600)
+	h := []int{6, 12, 18}
+	for _, c := range []struct {
+		agora time.Time
+		quer  time.Time
+	}{
+		{time.Date(2026, 11, 14, 5, 0, 0, 0, loc), time.Date(2026, 11, 14, 6, 0, 0, 0, loc)},
+		{time.Date(2026, 11, 14, 6, 0, 0, 0, loc), time.Date(2026, 11, 14, 12, 0, 0, 0, loc)},
+		{time.Date(2026, 11, 14, 13, 30, 0, 0, loc), time.Date(2026, 11, 14, 18, 0, 0, 0, loc)},
+		{time.Date(2026, 11, 14, 19, 0, 0, 0, loc), time.Date(2026, 11, 15, 6, 0, 0, 0, loc)},
+		{time.Date(2026, 12, 31, 23, 0, 0, 0, loc), time.Date(2027, 1, 1, 6, 0, 0, 0, loc)},
+	} {
+		if got := ProximoHorarioSync(c.agora, h); !got.Equal(c.quer) {
+			t.Errorf("de %v: %v, esperado %v", c.agora, got, c.quer)
+		}
+	}
+}

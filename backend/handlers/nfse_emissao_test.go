@@ -408,3 +408,34 @@ func TestBancosManutencao_ContaSyncLogETransacoes(t *testing.T) {
 	}
 	db.Exec(`DELETE FROM financeiro.transacoes WHERE conta_id = $1`, criada.ID)
 }
+
+func TestTransacoes_DevolveDetalhesDoExtratoEnriquecido(t *testing.T) {
+	db := nfseTestDB(t)
+	var contaID string
+	if err := db.QueryRow(`INSERT INTO financeiro.contas_financeiras (apelido, banco) VALUES ('Detalhes teste','077') RETURNING id`).Scan(&contaID); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		db.Exec(`DELETE FROM financeiro.transacoes WHERE conta_id = $1`, contaID)
+		db.Exec(`DELETE FROM financeiro.contas_financeiras WHERE id = $1`, contaID)
+	})
+	db.Exec(`INSERT INTO financeiro.transacoes (conta_id, data_transacao, descricao, valor, tipo, categoria, referencia_ext, detalhes)
+		VALUES ($1,'2026-11-11','Jc Distrib',4500,'credito','PIX','det-1','{"cpfCnpjPagador":"06314327000203","nomePagador":"Jc Distrib","endToEndId":"E123"}')`, contaID)
+	db.Exec(`INSERT INTO financeiro.transacoes (conta_id, data_transacao, descricao, valor, tipo, categoria, referencia_ext) VALUES ($1,'2026-11-12','Sem detalhe',1,'debito','TARIFA','det-2')`, contaID)
+	rr := chamar(TransacoesHandler(db), http.MethodGet, "/?conta_id="+contaID, nil, "")
+	var out []struct {
+		Descricao string         `json:"descricao"`
+		Detalhes  map[string]any `json:"detalhes"`
+	}
+	if json.Unmarshal(rr.Body.Bytes(), &out) != nil || len(out) != 2 {
+		t.Fatalf("lista: %d %s", rr.Code, rr.Body)
+	}
+	for _, o := range out {
+		if o.Descricao == "Jc Distrib" && o.Detalhes["cpfCnpjPagador"] != "06314327000203" {
+			t.Errorf("detalhes do Pix recebido não vieram: %v", o.Detalhes)
+		}
+		if o.Descricao == "Sem detalhe" && o.Detalhes != nil {
+			t.Errorf("lançamento sem detalhes deveria vir sem o campo: %v", o.Detalhes)
+		}
+	}
+}

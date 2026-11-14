@@ -179,6 +179,8 @@ type TransacaoResponse struct {
 	Tipo          string  `json:"tipo"`
 	Categoria     string  `json:"categoria,omitempty"`
 	Conciliado    bool    `json:"conciliado"`
+	// Detalhes é o JSON do extrato enriquecido (pagador, CPF/CNPJ, endToEnd...), quando existe.
+	Detalhes json.RawMessage `json:"detalhes,omitempty"`
 }
 
 func TransacoesHandler(db *sql.DB) http.HandlerFunc {
@@ -199,7 +201,7 @@ func TransacoesHandler(db *sql.DB) http.HandlerFunc {
 			query := `
 				SELECT t.id, t.conta_id, cf.apelido, t.data_transacao,
 				       t.descricao, t.valor, t.tipo,
-				       COALESCE(t.categoria,''), t.conciliado
+				       COALESCE(t.categoria,''), t.conciliado, t.detalhes
 				FROM financeiro.transacoes t
 				JOIN financeiro.contas_financeiras cf ON cf.id = t.conta_id
 				WHERE 1=1`
@@ -243,12 +245,16 @@ func TransacoesHandler(db *sql.DB) http.HandlerFunc {
 			for rows.Next() {
 				var t TransacaoResponse
 				var data time.Time
+				var det []byte
 				if err := rows.Scan(&t.ID, &t.ContaID, &t.ContaApelido, &data,
-					&t.Descricao, &t.Valor, &t.Tipo, &t.Categoria, &t.Conciliado); err != nil {
+					&t.Descricao, &t.Valor, &t.Tipo, &t.Categoria, &t.Conciliado, &det); err != nil {
 					http.Error(w, "internal server error", http.StatusInternalServerError)
 					return
 				}
 				t.DataTransacao = data.Format("2006-01-02")
+				if len(det) > 0 {
+					t.Detalhes = json.RawMessage(det)
+				}
 				transacoes = append(transacoes, t)
 			}
 			json.NewEncoder(w).Encode(transacoes)
