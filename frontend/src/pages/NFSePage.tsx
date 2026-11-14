@@ -84,6 +84,8 @@ export default function NFSePage() {
   const [valor, setValor] = useState('1,00')
   const [descricao, setDescricao] = useState('Teste de emissão — NFS-e de validação do sistema')
   const [competencia, setCompetencia] = useState('')
+  const [tipoTitulo, setTipoTitulo] = useState('mensalidade')
+  const [vencimento, setVencimento] = useState('')
   const [previa, setPrevia] = useState<string | null>(null)
   const [confirmacao, setConfirmacao] = useState('')
   const [ocupado, setOcupado] = useState(false)
@@ -162,7 +164,7 @@ export default function NFSePage() {
     try {
       const res = await fetch('/api/financeiro/nfse/emitir', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ cliente_id: clienteId, valor_centavos: centavos, descricao, competencia: competencia || undefined, enviar, confirmar_producao: enviar && producao ? FRASE_PRODUCAO : undefined }),
+        body: JSON.stringify({ cliente_id: clienteId, valor_centavos: centavos, descricao, competencia: competencia || undefined, tipo_titulo: tipoTitulo, vencimento: vencimento || undefined, enviar, confirmar_producao: enviar && producao ? FRASE_PRODUCAO : undefined }),
       })
       if (!res.ok) return toast.error(await lerErro(res))
       const j = await res.json()
@@ -171,6 +173,8 @@ export default function NFSePage() {
         return toast.success('Prévia gerada — nada foi enviado')
       }
       toast.success(`NFS-e autorizada${j.n_nfse ? ` nº ${j.n_nfse}` : ''}`)
+      if (j.titulo_id) toast.success(j.titulo_criado ? `Título criado em Contas a Receber (vence ${j.vencimento.split('-').reverse().join('/')})` : 'Nota ligada ao título já cadastrado em Contas a Receber')
+      if (j.titulo_aviso) toast.warning(j.titulo_aviso)
       setConfirmacao('')
       setPrevia(null)
       carregar()
@@ -202,6 +206,11 @@ export default function NFSePage() {
     const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body })
     if (!res.ok) return toast.error(await lerErro(res))
     toast.success(tipo === 'cancelar' ? 'Nota cancelada' : 'Consulta concluída')
+    if (tipo === 'cancelar') {
+      const j = await res.json().catch(() => ({}))
+      if (j.titulo_cancelado) toast.success('O título em aberto dessa nota também foi cancelado')
+      if (j.titulo_aviso) toast.warning(j.titulo_aviso)
+    }
     carregar()
   }
 
@@ -269,6 +278,16 @@ export default function NFSePage() {
               <div><Label>Valor (R$)</Label><Input value={valor} onChange={e => setValor(e.target.value)} /></div>
               <div className="col-span-3"><Label>Descrição do serviço</Label><Textarea value={descricao} onChange={e => setDescricao(e.target.value)} rows={3} /></div>
               <div><Label>Competência (opcional)</Label><Input type="date" value={competencia} onChange={e => setCompetencia(e.target.value)} /></div>
+              <div>
+                <Label>Tipo do título</Label>
+                <select className="w-full border rounded h-10 px-2 bg-white" value={tipoTitulo} onChange={e => setTipoTitulo(e.target.value)}>
+                  <option value="mensalidade">Mensalidade</option>
+                  <option value="adesao">Adesão / setup</option>
+                  <option value="projeto">Projeto</option>
+                  <option value="outro">Outro</option>
+                </select>
+              </div>
+              <div><Label>Vencimento (padrão: dia 10)</Label><Input type="date" value={vencimento} onChange={e => setVencimento(e.target.value)} /></div>
             </div>
             {cliente && !cliente.cod_ibge && (
               <Alert><AlertDescription>

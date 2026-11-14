@@ -323,6 +323,8 @@ type nfseEmitirReq struct {
 	Competencia       string `json:"competencia,omitempty"` // AAAA-MM-DD; vazio = 1º dia do mês corrente
 	Enviar            bool   `json:"enviar"`
 	ConfirmarProducao string `json:"confirmar_producao,omitempty"`
+	TipoTitulo        string `json:"tipo_titulo,omitempty"` // mensalidade (padrão), adesao, projeto, outro
+	Vencimento        string `json:"vencimento,omitempty"`  // AAAA-MM-DD; vazio = dia 10 (services.VencimentoPadrao)
 }
 
 // NFSeEmitirHandler trata POST /api/financeiro/nfse/emitir.
@@ -375,6 +377,23 @@ func NFSeEmitirHandler(db *sql.DB) http.HandlerFunc {
 				return
 			}
 			competencia = c
+		}
+		tipoTitulo := strings.TrimSpace(req.TipoTitulo)
+		if tipoTitulo == "" {
+			tipoTitulo = "mensalidade"
+		}
+		vencimento := services.VencimentoPadrao(time.Now().In(nfseBRT))
+		if req.Vencimento != "" {
+			v, err := time.ParseInLocation("2006-01-02", req.Vencimento, nfseBRT)
+			if err != nil {
+				nfseErro(w, http.StatusBadRequest, "vencimento deve ser AAAA-MM-DD")
+				return
+			}
+			vencimento = v
+		}
+		if tipoTitulo != "mensalidade" && tipoTitulo != "adesao" && tipoTitulo != "projeto" && tipoTitulo != "outro" {
+			nfseErro(w, http.StatusBadRequest, "tipo_titulo deve ser mensalidade, adesao, projeto ou outro")
+			return
 		}
 		if req.Enviar && emp.Ambiente == 1 && req.ConfirmarProducao != nfseFraseProducao {
 			nfseErro(w, http.StatusBadRequest, "ambiente de PRODUÇÃO: para emitir de verdade envie confirmar_producao = \""+nfseFraseProducao+"\"")
@@ -498,8 +517,20 @@ func NFSeEmitirHandler(db *sql.DB) http.HandlerFunc {
 			log.Printf("[NFSe] ATENÇÃO: enviado ao ambiente %d mas a Sefin respondeu tipoAmbiente=%d (chave %s)", emp.Ambiente, resp.TipoAmbiente, resp.ChaveAcesso)
 		}
 		marcarNFSe(ctx, db, id, "autorizada", resp.ChaveAcesso, resp.NFSeXML, "", "")
-		nfseJSON(w, http.StatusCreated, map[string]any{"id": id, "status": "autorizada", "chave_acesso": resp.ChaveAcesso,
-			"n_nfse": numeroNFSe(resp.NFSeXML), "tipo_ambiente": resp.TipoAmbiente})
+		out := map[string]any{"id": id, "status": "autorizada", "chave_acesso": resp.ChaveAcesso,
+			"n_nfse": numeroNFSe(resp.NFSeXML), "tipo_ambiente": resp.TipoAmbiente}
+		// Título no Contas a Receber (só produção: nota de homologação não cobra ninguém). Uma falha
+		// aqui não desfaz a nota, que já é válida na Sefin: a tela avisa e o título se cadastra à mão.
+		if emp.Ambiente == 1 {
+			tid, criado, err := services.GerarTituloDaNFSe(ctx, db, id, tipoTitulo, vencimento)
+			if err != nil {
+				log.Printf("[NFSe] nota %s autorizada, mas o título não foi criado: %v", id, err)
+				out["titulo_aviso"] = "a nota foi emitida, mas o título não pôde ser criado: cadastre-o em Contas a Receber"
+			} else {
+				out["titulo_id"], out["titulo_criado"], out["vencimento"] = tid, criado, vencimento.Format("2006-01-02")
+			}
+		}
+		nfseJSON(w, http.StatusCreated, out)
 	}
 }
 
@@ -727,7 +758,16 @@ func NFSeCancelarHandler(db *sql.DB) http.HandlerFunc {
 			return
 		}
 		db.ExecContext(ctx, `UPDATE financeiro.nfse_emitidas SET status='cancelada', cancel_xml=$2, erro=NULL, updated_at=NOW() WHERE id=$1`, req.ID, xml)
-		nfseJSON(w, http.StatusOK, map[string]string{"id": req.ID, "status": "cancelada"})
+		out := map[string]any{"id": req.ID, "status": "cancelada"}
+		if n, pago, err := services.CancelarTituloDaNFSe(ctx, db, req.ID); err != nil {
+			log.Printf("[NFSe] nota %s cancelada, mas o título não foi cancelado: %v", req.ID, err)
+			out["titulo_aviso"] = "a nota foi cancelada, mas o título não pôde ser cancelado: confira em Contas a Receber"
+		} else if pago {
+			out["titulo_aviso"] = "a nota foi cancelada, mas o título já está pago: o estorno deve ser decidido por você"
+		} else if n > 0 {
+			out["titulo_cancelado"] = true
+		}
+		nfseJSON(w, http.StatusOK, out)
 	}
 }
 
