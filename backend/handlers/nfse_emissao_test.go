@@ -563,6 +563,7 @@ func TestContrato_ServicoSemItensNaoGeraToken(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() {
+		db.Exec(`DELETE FROM financeiro.titulos_receber WHERE cliente_id = $1`, cli)
 		db.Exec(`DELETE FROM financeiro.contratos WHERE cliente_id = $1`, cli)
 		db.Exec(`DELETE FROM financeiro.clientes WHERE id = $1`, cli)
 	})
@@ -589,5 +590,84 @@ func TestContrato_ServicoSemItensNaoGeraToken(t *testing.T) {
 	rr = chamar(TitulosHandler(db), http.MethodPost, "/?action=baixar", []byte(fmt.Sprintf(`{"id":"%s","data":"2026-11-06","valor":24000}`, titulo)), "application/json")
 	if rr.Code != 200 || !strings.Contains(rr.Body.String(), `"tokens_renovados":0`) {
 		t.Fatalf("baixa de mensalidade sem token: %d %s", rr.Code, rr.Body)
+	}
+}
+
+// Editar o CNPJ do cliente grava em clientes E na linha principal de cliente_cnpjs (os contratos
+// apontam para ela), recusa CNPJ inválido ou de outro cliente e preserva o atual se vier em branco.
+func TestClientes_AlterarCNPJ(t *testing.T) {
+	db := nfseTestDB(t)
+	h := ClientesHandler(db)
+	const matriz, filial, outro = "06314327000203", "38149716000128", "10230480001960"
+	limpar := func() {
+		db.Exec(`DELETE FROM financeiro.titulos_receber WHERE cliente_id IN (SELECT id FROM financeiro.clientes WHERE cnpj IN ($1,$2,$3))`, matriz, filial, outro)
+		db.Exec(`DELETE FROM financeiro.contratos WHERE cliente_id IN (SELECT id FROM financeiro.clientes WHERE cnpj IN ($1,$2,$3))`, matriz, filial, outro)
+		db.Exec(`DELETE FROM financeiro.clientes WHERE cnpj IN ($1,$2,$3)`, matriz, filial, outro)
+	}
+	limpar()
+	t.Cleanup(limpar)
+
+	criar := func(razao, cnpj string) string {
+		b, _ := json.Marshal(map[string]any{"razao_social": razao, "cnpj": cnpj, "ativo": true})
+		rr := chamar(h, http.MethodPost, "/", b, "application/json")
+		var c struct {
+			ID string `json:"id"`
+		}
+		if rr.Code != http.StatusCreated || json.Unmarshal(rr.Body.Bytes(), &c) != nil {
+			t.Fatalf("criar %s: %d %s", razao, rr.Code, rr.Body)
+		}
+		return c.ID
+	}
+	jc := criar("JC TESTE", filial)
+	criar("OUTRO CLIENTE", outro)
+
+	// Contrato vinculado ao CNPJ principal.
+	var cnpjID string
+	db.QueryRow(`SELECT id FROM financeiro.cliente_cnpjs WHERE cliente_id = $1`, jc).Scan(&cnpjID)
+	var contrato string
+	if err := db.QueryRow(`INSERT INTO financeiro.contratos (cliente_id, data_inicio, valor_total) VALUES ($1, CURRENT_DATE, 4500) RETURNING id`, jc).Scan(&contrato); err != nil {
+		t.Fatal(err)
+	}
+	db.Exec(`INSERT INTO financeiro.contrato_cnpjs (contrato_id, cnpj_id) VALUES ($1,$2)`, contrato, cnpjID)
+
+	put := func(cnpj string) *httptest.ResponseRecorder {
+		b, _ := json.Marshal(map[string]any{"id": jc, "razao_social": "JC TESTE", "cnpj": cnpj, "ativo": true})
+		return chamar(h, http.MethodPut, "/", b, "application/json")
+	}
+	// 1) muda para a outra filial
+	if rr := put("06.314.327/0002-03"); rr.Code != 200 {
+		t.Fatalf("alterar CNPJ: %d %s", rr.Code, rr.Body)
+	}
+	var atual, principal, idDepois string
+	db.QueryRow(`SELECT cnpj FROM financeiro.clientes WHERE id = $1`, jc).Scan(&atual)
+	db.QueryRow(`SELECT id, cnpj FROM financeiro.cliente_cnpjs WHERE cliente_id = $1`, jc).Scan(&idDepois, &principal)
+	if atual != matriz || principal != matriz {
+		t.Fatalf("CNPJ não foi gravado: clientes=%s cliente_cnpjs=%s", atual, principal)
+	}
+	if idDepois != cnpjID {
+		t.Errorf("a linha do CNPJ principal deve ser a mesma (contratos apontam para ela): %s vs %s", idDepois, cnpjID)
+	}
+	var vinculos int
+	db.QueryRow(`SELECT COUNT(*) FROM financeiro.contrato_cnpjs WHERE contrato_id = $1 AND cnpj_id = $2`, contrato, cnpjID).Scan(&vinculos)
+	if vinculos != 1 {
+		t.Errorf("o vínculo do contrato com o CNPJ deveria continuar: %d", vinculos)
+	}
+	// 2) inválido, curto e de outro cliente
+	if rr := put("06314327000204"); rr.Code != http.StatusBadRequest {
+		t.Errorf("DV inválido: %d", rr.Code)
+	}
+	if rr := put("123"); rr.Code != http.StatusBadRequest {
+		t.Errorf("CNPJ curto: %d", rr.Code)
+	}
+	if rr := put(outro); rr.Code != http.StatusConflict {
+		t.Errorf("CNPJ de outro cliente deveria dar 409: %d %s", rr.Code, rr.Body)
+	}
+	// 3) em branco mantém
+	if rr := put(""); rr.Code != 200 {
+		t.Fatalf("PUT sem CNPJ: %d", rr.Code)
+	}
+	db.QueryRow(`SELECT cnpj FROM financeiro.clientes WHERE id = $1`, jc).Scan(&atual)
+	if atual != matriz {
+		t.Errorf("CNPJ em branco não pode apagar nem trocar: %s", atual)
 	}
 }

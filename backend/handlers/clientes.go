@@ -3,9 +3,14 @@ package handlers
 import (
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"net/http"
+
+	"fb_cloud/services"
+
+	"github.com/lib/pq"
 )
 
 type ClienteRequest struct {
@@ -275,21 +280,97 @@ func handlePutCliente(w http.ResponseWriter, r *http.Request, db *sql.DB) {
 		http.Error(w, "id required", http.StatusBadRequest)
 		return
 	}
-	_, err := db.Exec(`
+
+	tx, err := db.Begin()
+	if err != nil {
+		http.Error(w, "internal server error", http.StatusInternalServerError)
+		return
+	}
+	defer tx.Rollback()
+
+	// CNPJ: só dígitos; em branco mantém o atual. Quando muda, precisa ter 14 dígitos e dígitos
+	// verificadores válidos (o CNPJ vai para o DPS da NFS-e e para a conciliação do extrato).
+	novoCNPJ := onlyDigits(req.CNPJ)
+	var atualCNPJ string
+	if err := tx.QueryRow(`SELECT cnpj FROM financeiro.clientes WHERE id = $1 FOR UPDATE`, req.ID).Scan(&atualCNPJ); err != nil {
+		if err == sql.ErrNoRows {
+			http.Error(w, "cliente não encontrado", http.StatusNotFound)
+			return
+		}
+		http.Error(w, "internal server error", http.StatusInternalServerError)
+		return
+	}
+	mudouCNPJ := novoCNPJ != "" && novoCNPJ != onlyDigits(atualCNPJ)
+	if mudouCNPJ {
+		if len(novoCNPJ) != 14 {
+			http.Error(w, "CNPJ deve ter 14 dígitos", http.StatusBadRequest)
+			return
+		}
+		if !services.CNPJValido(novoCNPJ) {
+			http.Error(w, "CNPJ inválido (dígito verificador)", http.StatusBadRequest)
+			return
+		}
+	} else {
+		novoCNPJ = atualCNPJ
+	}
+
+	_, err = tx.Exec(`
 		UPDATE financeiro.clientes
 		SET razao_social=$1, email=$2, telefone=$3, responsavel=$4, ativo=$5,
 		    cep=$6, logradouro=$7, numero=$8, complemento=$9, bairro=$10, municipio=$11, uf=$12,
-		    cod_ibge=NULLIF($13,''), updated_at=CURRENT_TIMESTAMP
-		WHERE id=$14
+		    cod_ibge=NULLIF($13,''), cnpj=$14, updated_at=CURRENT_TIMESTAMP
+		WHERE id=$15
 	`, req.RazaoSocial, req.Email, req.Telefone, req.Responsavel, req.Ativo,
 		req.CEP, req.Logradouro, req.Numero, req.Complemento, req.Bairro, req.Municipio, req.UF, req.CodIBGE,
-		req.ID,
+		novoCNPJ, req.ID,
 	)
 	if err != nil {
+		if mudouCNPJ && isUniqueViolation(err) {
+			http.Error(w, "este CNPJ já está cadastrado para outro cliente", http.StatusConflict)
+			return
+		}
 		http.Error(w, "error updating cliente", http.StatusInternalServerError)
 		return
 	}
+
+	// O CNPJ principal também está em cliente_cnpjs (os contratos apontam para essa linha): atualiza a
+	// mesma linha, para os vínculos continuarem valendo; se não existir, cria.
+	if mudouCNPJ {
+		res, err := tx.Exec(`UPDATE financeiro.cliente_cnpjs SET cnpj = $3 WHERE cliente_id = $1 AND cnpj = $2`, req.ID, atualCNPJ, novoCNPJ)
+		if err != nil {
+			if isUniqueViolation(err) {
+				http.Error(w, "este CNPJ já está cadastrado para outro cliente", http.StatusConflict)
+				return
+			}
+			http.Error(w, "error updating cliente cnpj", http.StatusInternalServerError)
+			return
+		}
+		if n, _ := res.RowsAffected(); n == 0 {
+			if _, err := tx.Exec(`INSERT INTO financeiro.cliente_cnpjs (cliente_id, cnpj, descricao, is_principal) VALUES ($1,$2,'CNPJ Principal', true)`, req.ID, novoCNPJ); err != nil {
+				if isUniqueViolation(err) {
+					http.Error(w, "este CNPJ já está cadastrado para outro cliente", http.StatusConflict)
+					return
+				}
+				http.Error(w, "error creating cliente cnpj", http.StatusInternalServerError)
+				return
+			}
+		}
+	}
+
+	if err := tx.Commit(); err != nil {
+		http.Error(w, "internal server error", http.StatusInternalServerError)
+		return
+	}
+	if mudouCNPJ {
+		log.Printf("[Clientes] CNPJ do cliente %s alterado de %s para %s", req.ID, atualCNPJ, novoCNPJ)
+	}
 	json.NewEncoder(w).Encode(map[string]string{"status": "updated"})
+}
+
+// isUniqueViolation informa se o erro é de violação de unicidade do Postgres (23505).
+func isUniqueViolation(err error) bool {
+	var pqErr *pq.Error
+	return errors.As(err, &pqErr) && pqErr.Code == "23505"
 }
 
 func handleAddCNPJ(w http.ResponseWriter, r *http.Request, db *sql.DB) {
