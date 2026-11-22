@@ -9,6 +9,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"strings"
 	"sync"
 	"time"
 
@@ -475,6 +476,7 @@ func RegisterHandler(db *sql.DB) http.HandlerFunc {
 			http.Error(w, "Invalid request body", http.StatusBadRequest)
 			return
 		}
+		req.Email = normalizarEmail(req.Email)
 
 		if req.Email == "" || req.Password == "" || req.FullName == "" || req.CompanyName == "" {
 			http.Error(w, "Missing required fields", http.StatusBadRequest)
@@ -619,6 +621,7 @@ func LoginHandler(db *sql.DB) http.HandlerFunc {
 			http.Error(w, "Invalid request", http.StatusBadRequest)
 			return
 		}
+		req.Email = normalizarEmail(req.Email)
 
 		log.Printf("[Login] Attempting login for: %s", req.Email)
 
@@ -628,7 +631,7 @@ func LoginHandler(db *sql.DB) http.HandlerFunc {
 		// Use COALESCE for role and trial_ends_at to handle NULLs safely
 		err := db.QueryRow(`
 			SELECT id, email, full_name, password_hash, is_verified, COALESCE(trial_ends_at, NOW()), COALESCE(role, 'user'), created_at
-			FROM users WHERE email = $1
+			FROM users WHERE LOWER(email) = $1
 		`, req.Email).Scan(&user.ID, &user.Email, &user.FullName, &hash, &user.IsVerified, &user.TrialEndsAt, &user.Role, &user.CreatedAt)
 
 		if err == sql.ErrNoRows {
@@ -820,6 +823,7 @@ func ForgotPasswordHandler(db *sql.DB) http.HandlerFunc {
 			json.NewEncoder(w).Encode("Requisição inválida")
 			return
 		}
+		req.Email = normalizarEmail(req.Email)
 
 		// Rate limiting by email to prevent abuse
 		if !ForgotPasswordRL.Allow(req.Email) {
@@ -830,8 +834,10 @@ func ForgotPasswordHandler(db *sql.DB) http.HandlerFunc {
 		}
 
 		var userID string
-		err := db.QueryRow("SELECT id FROM users WHERE email = $1", req.Email).Scan(&userID)
+		err := db.QueryRow("SELECT id FROM users WHERE LOWER(email) = $1", req.Email).Scan(&userID)
 		if err == sql.ErrNoRows {
+			// A resposta continua vaga (não revela quem tem conta); o log é o que permite diagnosticar.
+			log.Printf("[ForgotPassword] E-mail não cadastrado: %s", req.Email)
 			// Return vague success to prevent email enumeration
 			w.Header().Set("Content-Type", "application/json")
 			json.NewEncoder(w).Encode(map[string]string{
@@ -1151,4 +1157,10 @@ func LogoutHandler(db *sql.DB) http.HandlerFunc {
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]string{"message": "Sessão encerrada com sucesso"})
 	}
+}
+
+// normalizarEmail tira espaços e passa para minúsculas: e-mail digitado com maiúscula (o celular
+// costuma capitalizar a 1ª letra) ou espaço no fim não pode virar "e-mail não cadastrado".
+func normalizarEmail(e string) string {
+	return strings.ToLower(strings.TrimSpace(e))
 }
