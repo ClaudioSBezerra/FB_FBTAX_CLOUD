@@ -352,6 +352,10 @@ func main() {
 	http.HandleFunc("/api/auth/forgot-password", withDB(handlers.ForgotPasswordHandler))
 	http.HandleFunc("/api/auth/reset-password",  withDB(handlers.ResetPasswordHandler))
 	http.HandleFunc("/api/auth/change-password", withAuth(handlers.ChangePasswordHandler, ""))
+
+	// Administração de usuários do painel (escopada ao ambiente de quem chama)
+	http.HandleFunc("/api/admin/usuarios",         withAuth(handlers.UsuariosHandler, "admin"))
+	http.HandleFunc("/api/admin/usuarios/convite", withAuth(handlers.UsuarioConviteHandler, "admin"))
 	http.HandleFunc("/api/auth/refresh",         withDB(handlers.RefreshHandler))
 	http.HandleFunc("/api/auth/logout",          withDB(handlers.LogoutHandler))
 

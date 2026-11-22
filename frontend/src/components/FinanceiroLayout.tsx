@@ -18,6 +18,7 @@ const navItems = [
   { label: 'Tokens', path: '/admin/financeiro/tokens' },
   { label: 'API Keys', path: '/admin/financeiro/api-keys' },
   { label: 'Acesso Portal', path: '/admin/financeiro/portal-clientes' },
+  { label: 'Usuários', path: '/admin/financeiro/usuarios' },
 ]
 
 export default function FinanceiroLayout({ children }: { children: React.ReactNode }) {

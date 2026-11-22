@@ -22,6 +22,7 @@ import PainelFinanceiroPage from './pages/PainelFinanceiroPage'
 import PortalClientesAdminPage from './pages/PortalClientesAdminPage'
 import PortalLoginPage from './pages/PortalLoginPage'
 import PortalDashboardPage from './pages/PortalDashboardPage'
+import UsuariosPage from './pages/UsuariosPage'
 import FinanceiroLayout from './components/FinanceiroLayout'
 import { LightThemeScope } from './components/LightThemeScope'
 import { GlowCursor } from './components/GlowCursor'
@@ -126,6 +127,9 @@ function App() {
             } />
             <Route path="/admin/financeiro/portal-clientes" element={
               <FinanceiroRoute><PortalClientesAdminPage /></FinanceiroRoute>
+            } />
+            <Route path="/admin/financeiro/usuarios" element={
+              <FinanceiroRoute><UsuariosPage /></FinanceiroRoute>
             } />
 
             {/* Portal do cliente (auth própria) */}

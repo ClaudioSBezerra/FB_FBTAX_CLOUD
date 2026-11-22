@@ -2,6 +2,7 @@ package services
 
 import (
 	"crypto/tls"
+	"encoding/base64"
 	"fmt"
 	"html"
 	"log"
@@ -966,3 +967,66 @@ func SendAlertaToken(to, razaoSocial, produto, plano, validUntil string) error {
 	))
 	return sendMailSSL(config, []string{to}, msg)
 }
+
+// SendConviteEmail manda o convite para um usuário novo do painel criar a própria senha.
+// O link é o mesmo da redefinição (/reset-senha?token=...), com validade de convite.
+func SendConviteEmail(email, nome, token string, validadeHoras int) error {
+	config := GetEmailConfig()
+	if config.Password == "" {
+		log.Printf("[Email Service] SMTP not configured. Skipping invite to %s", email)
+		return fmt.Errorf("serviço de e-mail não configurado - configure SMTP_PASSWORD")
+	}
+	appURL := os.Getenv("APP_URL")
+	if appURL == "" {
+		appURL = "https://fbtax.cloud"
+	}
+	link := fmt.Sprintf("%s/reset-senha?token=%s", appURL, token)
+	primeiroNome := strings.Fields(nome)
+	saudacao := "Olá,"
+	if len(primeiroNome) > 0 {
+		saudacao = "Olá, " + html.EscapeString(primeiroNome[0]) + ","
+	}
+	// Assunto "FBTax Cloud - Convite de acesso" em UTF-8/base64 (RFC 2047).
+	assunto := "=?UTF-8?B?" + base64.StdEncoding.EncodeToString([]byte("FBTax Cloud - Convite de acesso")) + "?="
+	corpo := fmt.Sprintf(`<!DOCTYPE html>
+<html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"></head>
+<body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto;">
+<div style="background:#f4f4f8; padding:32px; border-radius:8px;">
+  <div style="background:#0b1620; color:#fff; padding:20px; border-radius:8px; text-align:center;">
+    <div style="font-size:22px; font-weight:bold;">FBTax Cloud</div>
+    <div style="color:#5eead4; margin-top:4px;">Convite de acesso</div>
+  </div>
+  <div style="background:#fff; padding:28px; border-radius:8px; margin-top:12px;">
+    <p>%s</p>
+    <p>Você recebeu acesso ao painel administrativo do FBTax Cloud com o e-mail <strong>%s</strong>.</p>
+    <p>Para entrar, crie a sua senha no botão abaixo:</p>
+    <div style="text-align:center; margin:28px 0;">
+      <a href="%s" style="display:inline-block; padding:12px 24px; background:#0d9488; color:#fff; text-decoration:none; border-radius:6px; font-weight:bold;">Criar minha senha</a>
+    </div>
+    <p style="font-size:14px;">Ou copie e cole o link no navegador:<br><strong>%s</strong></p>
+    <p style="font-size:12px; color:#999;">Este link vale por %d horas. Depois de criar a senha, entre em %s/admin/login.</p>
+    <p style="font-size:12px; color:#999;">Se você não esperava este convite, ignore este e-mail.</p>
+  </div>
+</div>
+</body></html>
+`, saudacao, html.EscapeString(email), link, link, validadeHoras, appURL)
+	message := fmt.Sprintf("From: %s\r\nTo: %s\r\nSubject: %s\r\nMIME-Version: 1.0\r\nContent-Type: text/html; charset=UTF-8\r\n\r\n%s",
+		config.From, email, assunto, corpo)
+
+	log.Printf("[Email Service] Sending invite email to %s via %s:%d", email, config.Host, config.Port)
+	var err error
+	if config.Port == 465 {
+		err = sendMailSSL(config, []string{email}, []byte(message))
+	} else {
+		addr := fmt.Sprintf("%s:%d", config.Host, config.Port)
+		auth := smtp.PlainAuth("", config.Username, config.Password, config.Host)
+		err = smtp.SendMail(addr, auth, config.Username, []string{email}, []byte(message))
+	}
+	if err != nil {
+		log.Printf("[Email Service] Failed to send invite to %s: %v", email, err)
+		return fmt.Errorf("falha ao enviar e-mail: %w", err)
+	}
+	log.Printf("[Email Service] Invite email sent successfully to %s", email)
+	return nil
+}
+
