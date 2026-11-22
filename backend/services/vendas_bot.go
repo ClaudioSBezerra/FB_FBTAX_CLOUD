@@ -57,6 +57,39 @@ type AtualizacaoLead struct {
 	ConsentimentoContato bool   `json:"consentimento_contato"`
 }
 
+// EstadoLeadVendas: o que já aconteceu nesta conversa. O histórico guardado só tem os textos (sem as
+// chamadas de ferramenta), então o modelo recebe o estado a cada turno para não "esquecer" que já
+// avisou a equipe e não se desmentir.
+type EstadoLeadVendas struct {
+	Encaminhado   bool
+	Consentimento bool
+	Nome          string
+	Empresa       string
+	TemContato    bool
+}
+
+func (e EstadoLeadVendas) texto() string {
+	sim := func(b bool) string {
+		if b {
+			return "sim"
+		}
+		return "não"
+	}
+	v := func(s string) string {
+		if s == "" {
+			return "(ainda não informado)"
+		}
+		return s
+	}
+	return "=== ESTADO DESTA CONVERSA (registro do sistema, é a verdade) ===\n" +
+		"Equipe já avisada (encaminhar_equipe já foi executada): " + sim(e.Encaminhado) + "\n" +
+		"Contato autorizado pela pessoa: " + sim(e.Consentimento) + "\n" +
+		"E-mail ou WhatsApp já gravado: " + sim(e.TemContato) + "\n" +
+		"Nome: " + v(e.Nome) + "\nEmpresa: " + v(e.Empresa) + "\n" +
+		"Se a equipe já foi avisada, o que você disse antes sobre isso estava certo: não peça desculpas nem diga que errou. " +
+		"Dados novos (nome, empresa, contato) chegam à equipe automaticamente; basta gravar com atualizar_lead."
+}
+
 // ResultadoTurno: resposta ao visitante e o que mudou no lead.
 type ResultadoTurno struct {
 	Resposta     string
@@ -101,8 +134,10 @@ Contato e privacidade (LGPD):
 - Só grave e-mail/WhatsApp com consentimento_contato verdadeiro, depois que ela autorizar.
 
 Encaminhamento:
-- Chame encaminhar_equipe quando a pessoa quiser falar com alguém, pedir demonstração ou preço, ou quando já tiver nome, empresa e um contato autorizado.
-- Depois de encaminhar, diga que um especialista da FBTechIA vai chamar e que ela também pode clicar no botão do WhatsApp que aparece abaixo da conversa.
+- Quando a pessoa quiser falar com alguém, pedir demonstração ou perguntar preço, primeiro peça, uma coisa por vez: nome, empresa, a autorização de contato e o melhor e-mail ou WhatsApp.
+- Chame encaminhar_equipe assim que tiver nome e um contato autorizado, ou se a pessoa preferir não deixar contato (aí ofereça o botão do WhatsApp). Chame no máximo uma vez por conversa: veja o ESTADO DESTA CONVERSA.
+- Nunca diga que avisou a equipe antes de receber o resultado de encaminhar_equipe. Depois de encaminhar, diga que um especialista da FBTechIA vai chamar e que ela também pode clicar no botão do WhatsApp que aparece abaixo da conversa.
+- O ESTADO DESTA CONVERSA, enviado a cada turno, é o registro real do que já foi feito. Confie nele e nunca se corrija sobre avisos já feitos.
 
 === BASE DE CONHECIMENTO ===
 ` + conhecimentoVendas
@@ -168,7 +203,7 @@ func mensagensVendas(historico []MensagemVendas, nova string) []anthropic.Messag
 
 // ConversarVendas roda um turno: chama o modelo, executa as ferramentas (no máximo 3 voltas) e
 // devolve a resposta final. Quem chama grava o lead e dispara os avisos.
-func ConversarVendas(ctx context.Context, historico []MensagemVendas, nova string) (ResultadoTurno, error) {
+func ConversarVendas(ctx context.Context, historico []MensagemVendas, nova string, estado EstadoLeadVendas) (ResultadoTurno, error) {
 	var res ResultadoTurno
 	if strings.TrimSpace(os.Getenv("ANTHROPIC_API_KEY")) == "" {
 		return res, ErrVendasNaoConfigurado
@@ -177,7 +212,11 @@ func ConversarVendas(ctx context.Context, historico []MensagemVendas, nova strin
 	defer cancel()
 	cli := anthropic.NewClient()
 	msgs := mensagensVendas(historico, nova)
-	sistema := []anthropic.TextBlockParam{{Text: promptVendas(), CacheControl: anthropic.NewCacheControlEphemeralParam()}}
+	// 1º bloco fixo (em cache); o estado vem depois para não quebrar o cache.
+	sistema := []anthropic.TextBlockParam{
+		{Text: promptVendas(), CacheControl: anthropic.NewCacheControlEphemeralParam()},
+		{Text: estado.texto()},
+	}
 
 	var texto strings.Builder
 	for volta := 0; volta < 3; volta++ {
@@ -218,7 +257,11 @@ func ConversarVendas(ctx context.Context, historico []MensagemVendas, nova strin
 					}
 					json.Unmarshal([]byte(v.JSON.Input.Raw()), &e)
 					res.Encaminhar, res.Motivo = true, e.Motivo
-					resultados = append(resultados, anthropic.NewToolResultBlock(b.ID, "equipe avisada; o botão de WhatsApp vai aparecer para o visitante", false))
+					r := "equipe avisada agora; o botão de WhatsApp vai aparecer para o visitante"
+					if estado.Encaminhado {
+						r = "a equipe já tinha sido avisada antes nesta conversa (está certo dizer que já avisou); os dados novos seguem como atualização automática"
+					}
+					resultados = append(resultados, anthropic.NewToolResultBlock(b.ID, r, false))
 				default:
 					resultados = append(resultados, anthropic.NewToolResultBlock(b.ID, "ferramenta desconhecida", true))
 				}

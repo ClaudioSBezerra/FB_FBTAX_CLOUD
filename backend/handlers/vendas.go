@@ -157,7 +157,11 @@ func camposLead(l *leadVendas) [][2]string {
 
 func textoTelegramLead(l *leadVendas, motivo string) string {
 	var b strings.Builder
-	b.WriteString(fmt.Sprintf("🔥 Lead #%d do Assistente FbTax", l.ID))
+	icone := "🔥"
+	if strings.HasPrefix(motivo, "atualização") {
+		icone = "📇"
+	}
+	b.WriteString(fmt.Sprintf("%s Lead #%d do Assistente FbTax", icone, l.ID))
 	if motivo != "" {
 		b.WriteString(" — " + motivo)
 	}
@@ -265,7 +269,9 @@ func VendasChatHandler(db *sql.DB) http.HandlerFunc {
 			return
 		}
 
-		res, err := services.ConversarVendas(r.Context(), l.Conversa, msg)
+		tinhaContato := l.Email != "" || l.Whatsapp != ""
+		estado := services.EstadoLeadVendas{Encaminhado: l.Encaminhado, Consentimento: l.Consentimento, Nome: l.Nome, Empresa: l.Empresa, TemContato: tinhaContato}
+		res, err := services.ConversarVendas(r.Context(), l.Conversa, msg, estado)
 		if err != nil {
 			log.Printf("[Vendas] lead #%d: %v", l.ID, err)
 			erroVendas(w, http.StatusBadGateway, "O assistente não respondeu agora. Tente de novo ou fale com a equipe pelo WhatsApp.")
@@ -273,6 +279,8 @@ func VendasChatHandler(db *sql.DB) http.HandlerFunc {
 		}
 		aplicarAtualizacoes(&l, res.Atualizacoes)
 		encaminharAgora := res.Encaminhar && !l.Encaminhado
+		// Já encaminhado antes e o contato só chegou agora: a equipe recebe uma atualização (o 1º aviso foi sem contato).
+		atualizarEquipe := l.Encaminhado && !tinhaContato && (l.Email != "" || l.Whatsapp != "")
 		l.Status = statusLead(&l, res.Encaminhar)
 		l.Conversa = append(l.Conversa, services.MensagemVendas{Papel: "visitante", Texto: msg}, services.MensagemVendas{Papel: "assistente", Texto: res.Resposta})
 		conv, _ := json.Marshal(l.Conversa)
@@ -285,9 +293,12 @@ func VendasChatHandler(db *sql.DB) http.HandlerFunc {
 			log.Printf("[Vendas] gravar lead #%d: %v", l.ID, err)
 		}
 
-		if encaminharAgora {
+		if encaminharAgora || atualizarEquipe {
 			lead := l
 			motivo := res.Motivo
+			if atualizarEquipe {
+				motivo = "atualização: contato recebido"
+			}
 			go func() {
 				ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 				defer cancel()
@@ -298,7 +309,7 @@ func VendasChatHandler(db *sql.DB) http.HandlerFunc {
 					log.Printf("[Vendas] e-mail do lead #%d: %v", lead.ID, err)
 				}
 			}()
-			log.Printf("[Vendas] lead #%d encaminhado (%s)", l.ID, res.Motivo)
+			log.Printf("[Vendas] lead #%d avisado à equipe (%s)", l.ID, motivo)
 		}
 
 		out := map[string]any{"sessao": l.Sessao, "resposta": res.Resposta}
