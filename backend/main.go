@@ -353,6 +353,10 @@ func main() {
 	http.HandleFunc("/api/auth/reset-password",  withDB(handlers.ResetPasswordHandler))
 	http.HandleFunc("/api/auth/change-password", withAuth(handlers.ChangePasswordHandler, ""))
 
+	// Assistente FbTax — bot de vendas da landing (#1). Chat público (limites no handler); leads só admin.
+	http.HandleFunc("/api/vendas/chat",  withDB(handlers.VendasChatHandler))
+	http.HandleFunc("/api/vendas/leads", withAuth(handlers.VendasLeadsHandler, "admin"))
+
 	// Administração de usuários do painel (escopada ao ambiente de quem chama)
 	http.HandleFunc("/api/admin/usuarios",         withAuth(handlers.UsuariosHandler, "admin"))
 	http.HandleFunc("/api/admin/usuarios/convite", withAuth(handlers.UsuarioConviteHandler, "admin"))

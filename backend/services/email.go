@@ -1030,3 +1030,40 @@ func SendConviteEmail(email, nome, token string, validadeHoras int) error {
 	return nil
 }
 
+// SendLeadVendasEmail avisa a equipe de um lead quente do Assistente FbTax (#1).
+func SendLeadVendasEmail(destinatarios []string, id int64, campos [][2]string, conversa []MensagemVendas) error {
+	config := GetEmailConfig()
+	if config.Password == "" {
+		log.Printf("[Email] SMTP não configurado, aviso do lead #%d não enviado", id)
+		return nil
+	}
+	appURL := os.Getenv("APP_URL")
+	if appURL == "" {
+		appURL = "https://fbtax.cloud"
+	}
+	var linhas, conv strings.Builder
+	for _, c := range campos {
+		if strings.TrimSpace(c[1]) != "" {
+			linhas.WriteString("<tr><td style=\"padding:4px 12px 4px 0;color:#666\">" + html.EscapeString(c[0]) + "</td><td><strong>" + html.EscapeString(c[1]) + "</strong></td></tr>")
+		}
+	}
+	for _, m := range conversa {
+		quem := "Visitante"
+		if m.Papel == "assistente" {
+			quem = "Assistente"
+		}
+		conv.WriteString("<p style=\"margin:4px 0\"><strong>" + quem + ":</strong> " + html.EscapeString(m.Texto) + "</p>")
+	}
+	corpo := fmt.Sprintf(`<!DOCTYPE html><html><head><meta charset="UTF-8"></head>
+<body style="font-family: Arial, sans-serif; color:#333; max-width:680px;">
+<h2 style="color:#0d9488;">Lead #%d do Assistente FbTax</h2>
+<table>%s</table>
+<h3>Conversa</h3>%s
+<p><a href="%s/admin/financeiro/leads">Abrir a lista de leads</a></p>
+</body></html>`, id, linhas.String(), conv.String(), appURL)
+	assunto := "=?UTF-8?B?" + base64.StdEncoding.EncodeToString([]byte(fmt.Sprintf("FBTax - Lead #%d do site", id))) + "?="
+	msg := []byte(fmt.Sprintf("From: %s\r\nTo: %s\r\nSubject: %s\r\nMIME-Version: 1.0\r\nContent-Type: text/html; charset=UTF-8\r\n\r\n%s",
+		config.From, strings.Join(destinatarios, ", "), assunto, corpo))
+	return sendMailSSL(config, destinatarios, msg)
+}
+

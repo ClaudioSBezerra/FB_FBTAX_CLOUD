@@ -10,6 +10,9 @@ import (
 
 // ─── Allowed CORS Origins ─────────────────────────────────────────────────────
 
+// OrigensLanding: sites públicos que podem chamar as rotas abertas de vendas.
+var OrigensLanding = []string{"https://apuracaoassistida.ia.br", "https://www.apuracaoassistida.ia.br"}
+
 func GetAllowedOrigins() map[string]bool {
 	envOrigins := os.Getenv("ALLOWED_ORIGINS")
 	var list []string
@@ -22,6 +25,8 @@ func GetAllowedOrigins() map[string]bool {
 			"http://localhost:3083",
 		}
 	}
+	// Landing comercial do FBTax: o chat do Assistente FbTax chama /api/vendas/chat daqui (#1).
+	list = append(list, OrigensLanding...)
 	m := make(map[string]bool, len(list))
 	for _, o := range list {
 		m[strings.TrimSpace(o)] = true

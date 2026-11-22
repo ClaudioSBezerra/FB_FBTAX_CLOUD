@@ -20,6 +20,13 @@ services:
       - SMTP_USER=${SMTP_USER}
       - SMTP_PASSWORD=${SMTP_PASSWORD}
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      # Assistente FbTax — bot de vendas da landing (#1)
+      - VENDAS_MODELO=${VENDAS_MODELO:-claude-haiku-5-5}
+      - VENDAS_WHATSAPP=${VENDAS_WHATSAPP:-5562983462443}
+      - VENDAS_EMAIL_EQUIPE=${VENDAS_EMAIL_EQUIPE:-contato@fbtechia.com}
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN:-}
+      - TELEGRAM_CHAT_ID_VENDAS=${TELEGRAM_CHAT_ID_VENDAS:-}
+      - TURNSTILE_SECRET=${TURNSTILE_SECRET:-}
       - SMTP_FROM=${SMTP_FROM}
       - ADMIN_EMAIL=${ADMIN_EMAIL}
       - ALLOWED_ORIGINS=${ALLOWED_ORIGINS:-https://www.fbtax.cloud}
