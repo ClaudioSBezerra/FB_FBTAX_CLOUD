@@ -81,7 +81,7 @@ const ForgotPassword = () => {
           )}
         </CardContent>
         <CardFooter className="flex justify-center">
-          <Link to="/login" className="flex items-center text-sm text-gray-500 hover:text-gray-900">
+          <Link to="/admin/login" className="flex items-center text-sm text-gray-500 hover:text-gray-900">
             <ArrowLeft className="w-4 h-4 mr-2" />
             Voltar para Login
           </Link>

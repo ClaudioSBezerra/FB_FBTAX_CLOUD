@@ -2,6 +2,8 @@ import { BrowserRouter, Routes, Route, Navigate, useNavigate } from 'react-route
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { Toaster } from '@/components/ui/sonner'
 import Login from './pages/Login'
+import ForgotPassword from './pages/ForgotPassword'
+import ResetPassword from './pages/ResetPassword'
 import PortalPage from './pages/PortalPage'
 import EmpresaPage from './pages/EmpresaPage'
 import NFSePage from './pages/NFSePage'
@@ -70,6 +72,11 @@ function App() {
 
             {/* Admin FBTax */}
             <Route path="/admin/login" element={<Login />} />
+            {/* Recuperação de senha: o e-mail manda para /reset-senha?token=... (services/email.go) */}
+            <Route path="/forgot-password" element={<ForgotPassword />} />
+            <Route path="/reset-senha" element={<ResetPassword />} />
+            <Route path="/reset-password" element={<ResetPassword />} />
+            <Route path="/login" element={<Navigate to="/admin/login" replace />} />
             <Route path="/admin" element={
               <ProtectedRoute><AdminIndex /></ProtectedRoute>
             } />
